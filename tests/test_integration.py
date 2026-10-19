@@ -199,3 +199,17 @@ def test_noise_params_from_json(tmp_path):
     (tmp_path / "b1_synthetic.json").write_text(
         json.dumps({"overall": {"rmse_pp": 3.0, "bias_pp": 0.0}}), encoding="utf8")
     assert noise_params_from_results("b1", tmp_path)[0] == pytest.approx(3.0)
+
+
+def test_noise_bands_parse_and_apply(tmp_path):
+    (tmp_path / "b0_synthetic.json").write_text(json.dumps({
+        "overall": {"mae_pp": 1.0, "bias_pp": 0.0},
+        "by_coverage_band": {"0-15": {"mae_pp": 0.5, "bias_pp": 0.5},
+                             "15-30": {"mae_pp": 1.0, "bias_pp": 0.0},
+                             "50-80+": {"mae_pp": 3.0, "bias_pp": -3.0}}}), encoding="utf8")
+    bands, src = integration.noise_bands_from_results("b0", tmp_path)
+    assert [b[:2] for b in bands] == [(0.0, 15.0), (15.0, 30.0), (50.0, 1e9)]
+    assert bands[0][3] == 0.5 and bands[2][3] == -3.0
+    v = NoisyVerifier(bands=bands)
+    assert v.error_params(5.0)[1] == 0.5 and v.error_params(70.0)[1] == -3.0
+    assert v.error_params(40.0) == (bands[-1][2], bands[-1][3])   # uncovered gap -> last band

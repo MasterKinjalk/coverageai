@@ -407,7 +407,8 @@ def run_experiment(args) -> Path:
     initargs = (model, verifier, args.model_path, args.record_weight, args.n_jobs)
     meta_mods = integration.build_modules(model, verifier, model_path=args.model_path)
     noise = ({"sd_pp": meta_mods.verifier.sd_pp, "bias_pp": meta_mods.verifier.bias_pp,
-              "source": meta_mods.verifier.source} if hasattr(meta_mods.verifier, "sd_pp") else None)
+              "source": meta_mods.verifier.source,
+              "bands": [list(b) for b in (meta_mods.verifier.bands or ())]} if hasattr(meta_mods.verifier, "sd_pp") else None)
     del meta_mods
 
     fixed: dict[tuple, tuple] = {}
@@ -592,7 +593,9 @@ def write_summary(results, agg, gaps, abl, slow) -> None:
         n = len(res["seeds"])
         nz = res["noise_model"]
         L.append(f"## Model `{mdl}` ({n} seeds, verifier `{res['verifier']}`"
-                 + (f", noise sd {nz['sd_pp']:.2f} pp, bias {nz['bias_pp']:+.2f} pp from {nz['source']}" if nz else "")
+                 + (f", measurement noise from {nz['source']}: " + (
+                     "; ".join(f"cov {lo:g}-{min(hi, 100):g}%: bias {b:+.2f}, sd {sd:.2f} pp" for lo, hi, sd, b in nz["bands"])
+                     if nz.get("bands") else f"sd {nz['sd_pp']:.2f} pp, bias {nz['bias_pp']:+.2f} pp") if nz else "")
                  + (f", slow-loop record weight {res['record_weight']:g}" if res.get("record_weight") else "")
                  + ")\n")
         g = gaps[mdl]

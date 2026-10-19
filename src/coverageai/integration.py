@@ -12,8 +12,9 @@ model:
   mock            mocks.MockModel with the whole mock stack (fast unit tests only).
 verifier:
   perfect         measurement = true outcome coverage (no image).
-  noisy           true coverage + Gaussian error (bias, sd from results/b0_synthetic.json
-                  or b1_synthetic.json when present; default sd 1.5 pp). No image.
+  noisy           true coverage + Gaussian error (per-coverage-band bias and sd from
+                  results/b0_synthetic.json or b1_synthetic.json when present, else overall
+                  values from the same file; default sd 1.5 pp). No image.
   b0              WSPRenderer card image -> vision.classical.ClassicalVerifier.
   b1              WSPRenderer card image -> learned U-Net verifier (when merged).
 """
@@ -119,10 +120,20 @@ class NoisyVerifier:
     sd_pp: float = DEFAULT_NOISE_SD_PP
     bias_pp: float = 0.0
     source: str = "default"
+    # optional coverage-band dependent error: ((lo, hi, sd_pp, bias_pp), ...) on TRUE coverage
+    bands: tuple[tuple[float, float, float, float], ...] | None = None
+
+    def error_params(self, true_cov: float) -> tuple[float, float]:
+        if self.bands:
+            for lo, hi, sd, bias in self.bands:
+                if lo <= true_cov < hi:
+                    return sd, bias
+            return self.bands[-1][2], self.bands[-1][3]
+        return self.sd_pp, self.bias_pp
 
     def measure_outcome(self, outcome: Outcome, rng: np.random.Generator) -> CardMeasurement:
-        c = float(np.clip(outcome.coverage_pct + self.bias_pp + self.sd_pp * rng.standard_normal(),
-                          0.0, 100.0))
+        sd, bias = self.error_params(outcome.coverage_pct)
+        c = float(np.clip(outcome.coverage_pct + bias + sd * rng.standard_normal(), 0.0, 100.0))
         s = spec()["coverage_classes"]
         return CardMeasurement(c, outcome.stains_per_cm2, None, None, None,
                                coverage_class(c, s["acceptable_min"], s["marginal_min"]),
@@ -153,6 +164,41 @@ def noise_params_from_results(which: str | None = None, results_dir: Path | None
     return DEFAULT_NOISE_SD_PP, 0.0, "default"
 
 
+def noise_bands_from_results(which: str | None = None, results_dir: Path | None = None
+                             ) -> tuple[tuple[tuple[float, float, float, float], ...], str] | None:
+    """Band-dependent (lo, hi, sd, bias) from the `by_coverage_band` block of
+    results/{b0,b1}_synthetic.json, or None. Band keys look like "0-15", "50-80+" (the last
+    band is open-ended). Per band: bias = bias_pp, sd = rmse-based if `rmse_pp` is present, else
+    the Gaussian-equivalent sqrt((mae * sqrt(pi/2))^2 - bias^2), floored at 0.35 * mae."""
+    d = results_dir or ROOT / "results"
+    for name in ([which] if which else ["b0", "b1"]):
+        f = d / f"{name}_synthetic.json"
+        if not f.is_file():
+            continue
+        blocks = json.loads(f.read_text(encoding="utf8")).get("by_coverage_band")
+        if not blocks:
+            continue
+        out = []
+        try:
+            for key, v in blocks.items():
+                lo_s, hi_s = key.rstrip("+").split("-")
+                lo, hi = float(lo_s), (1e9 if key.endswith("+") else float(hi_s))
+                bias = float(v.get("bias_pp", 0.0))
+                if "rmse_pp" in v:
+                    sd = float(np.sqrt(max(float(v["rmse_pp"]) ** 2 - bias ** 2, 0.0)))
+                else:
+                    mae = float(v["mae_pp"])
+                    sd = max(float(np.sqrt(max((mae * np.sqrt(np.pi / 2)) ** 2 - bias ** 2, 0.0))),
+                             0.35 * mae)
+                out.append((lo, hi, sd, bias))
+        except (ValueError, KeyError):
+            continue
+        out.sort()
+        if out:
+            return tuple(out), f.name
+    return None
+
+
 def image_verifier_available(name: str) -> bool:
     try:
         make_image_verifier(name)
@@ -177,7 +223,7 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
                   model_path: str | Path | None = None,
                   noise_sd_pp: float | None = None, noise_bias_pp: float | None = None,
                   noise_source: str | None = None, results_dir: Path | None = None,
-                  model_obj=None, record_weight: float | None = None,
+                  noise_bands: bool = True, model_obj=None, record_weight: float | None = None,
                   n_jobs: int | None = None) -> Modules:
     """Assemble loop.Modules from real components (see module docstring)."""
     if model not in MODEL_CHOICES:
@@ -207,11 +253,16 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
         ver = None
     elif verifier == "noisy":
         sd, bias, src = noise_params_from_results(None, results_dir)
+        bands = None
         if noise_sd_pp is not None or noise_bias_pp is not None:
             sd = DEFAULT_NOISE_SD_PP if noise_sd_pp is None else noise_sd_pp
             bias = 0.0 if noise_bias_pp is None else noise_bias_pp
             src = noise_source or "explicit"
-        ver = NoisyVerifier(sd, bias, src)
+        elif noise_bands:
+            nb = noise_bands_from_results(None, results_dir)
+            if nb is not None:
+                bands, src = nb[0], nb[1] + " (by coverage band)"
+        ver = NoisyVerifier(sd, bias, src, bands)
     else:
         ver = make_image_verifier(verifier)
     return Modules(simulator=sim, model=mdl, selector=sel, verifier=ver, renderer=rend,
