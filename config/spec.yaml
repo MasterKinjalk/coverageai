@@ -68,6 +68,7 @@ physics:
   gravity_m_s2: 9.81
   evaporation_lambda_coeff: 84.76   # um^2/s per degC of wet-bulb depression (Williamson-Threadgill)
   drift_threshold_m: 0.5            # displacement beyond this counts as drift
+  exit_velocity_coeff: 0.6          # v0 = coeff * sqrt(2 P / rho_water); droplets decelerate from v0 toward V_t (decision D10)
   spread_factor: [1.6, 2.2]         # stain diameter / droplet diameter on WSP, sampled uniformly
   gpa_to_ul_cm2: 0.09354
   min_detectable_droplet_um: 50     # WSP does not register smaller droplets
