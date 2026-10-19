@@ -1,0 +1,72 @@
+{
+  "verifier": "B1_unet",
+  "split": "test",
+  "data": "data/synthetic/v1",
+  "weights": "models/unet_v1.pt",
+  "overall": {
+    "n": 180,
+    "coverage_mae_pp": 0.42474388096781984,
+    "coverage_bias_pp": 0.3259306037976115,
+    "iou": 0.9252562653144567,
+    "class_agreement": 0.9944444444444445,
+    "runtime_s_mean": 1.8952936483336897,
+    "coverage_mae_vs_mask_pp": 0.4503279751847417,
+    "runtime_s_max": 7.417510800005402
+  },
+  "by_band": {
+    "0-10": {
+      "n": 29,
+      "coverage_mae_pp": 0.11380159838296733,
+      "coverage_bias_pp": 0.10380346374831859,
+      "iou": 0.9055256877421857,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 1.5974417724124765
+    },
+    "10-20": {
+      "n": 27,
+      "coverage_mae_pp": 0.18178658411501158,
+      "coverage_bias_pp": 0.11751195905793803,
+      "iou": 0.9222046028169159,
+      "class_agreement": 0.9629629629629629,
+      "runtime_s_mean": 1.819611762958596
+    },
+    "20-30": {
+      "n": 34,
+      "coverage_mae_pp": 0.3843497049920947,
+      "coverage_bias_pp": 0.24590459815707638,
+      "iou": 0.9161021390579878,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 1.7846086029466652
+    },
+    "30-45": {
+      "n": 34,
+      "coverage_mae_pp": 0.45081658097000965,
+      "coverage_bias_pp": 0.2302000729007972,
+      "iou": 0.9318232404641512,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 1.947545826476177
+    },
+    "45-60": {
+      "n": 22,
+      "coverage_mae_pp": 0.5428790055738492,
+      "coverage_bias_pp": 0.48862336461290246,
+      "iou": 0.9272005120831491,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 1.8581760954508686
+    },
+    "60-100": {
+      "n": 34,
+      "coverage_mae_pp": 0.8207771354311757,
+      "coverage_bias_pp": 0.7513856618486165,
+      "iou": 0.9458377754835321,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 2.291894205880132
+    }
+  },
+  "truth": "json",
+  "targets": {
+    "coverage_mae_pp": 2.0,
+    "class_agreement": 0.9,
+    "runtime_s": 2.0
+  }
+}
