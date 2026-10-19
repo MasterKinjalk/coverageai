@@ -1,0 +1,98 @@
+# CoverageVision AI system specification (v1.0)
+# Source: Docs/CoverageAIDraftParameters.pdf (Emery Brewer) and the submitted proposal.
+# Every number used by the simulator, selector and feedback modules lives here.
+schema_version: "1.0"
+
+boom:
+  width_ft: 120.0
+  nozzle_spacing_in: 20.0
+
+card:                      # standard water-sensitive paper card
+  width_mm: 76.0
+  height_mm: 26.0
+  dpi: 600                 # 23.62 px/mm
+
+nozzle_families: [TP65, ULD, 3D, XR, DGX40]
+
+pressure_range_psi:        # manufacturer operating ranges used for candidate generation
+  TP65: [30, 60]
+  XR: [15, 60]
+  DGX40: [20, 70]
+  ULD: [20, 115]
+  3D: [10, 90]
+
+spray_angle_deg:           # nominal; verify against manufacturer catalogs (decision D5)
+  TP65: 65
+  XR: 110
+  DGX40: 40
+  ULD: 120
+  3D: 100
+
+ranges:                    # operating ranges for x (conditions)
+  wind_speed_ms: [0.0, 7.0]
+  wind_dir_deg: [0.0, 360.0]
+  heading_deg: [0.0, 360.0]
+  temp_c: [10.0, 40.0]
+  rh_pct: [10.0, 100.0]
+  travel_speed_kmh: [6.4, 32.2]   # 4 to 20 mph, the chart range
+  boom_height_m: [0.30, 0.75]
+
+wind_limit_ms: 6.7          # > 15 mph prohibits application
+wind_direction_convention: toward   # decision D1: degrees the airflow moves toward
+
+coverage_classes:           # percent card area; configurable per product/target
+  acceptable_min: 30.0
+  marginal_min: 15.0        # below this is critical
+
+c_req_pct: 30.0             # default coverage requirement
+
+droplets:
+  # approximate ASABE S572.3 class-center volume median diameters, um
+  class_order: [VF, F, M, C, VC, XC, UC]
+  vmd_center_um: {VF: 90, F: 145, M: 215, C: 310, VC: 410, XC: 525, UC: 700}
+  vmd_bounds_um:
+    VF: [50, 100]
+    F: [100, 175]
+    M: [175, 250]
+    C: [250, 375]
+    VC: [375, 450]
+    XC: [450, 650]
+    UC: [650, 900]
+  pressure_exponent: -0.3   # within-class trend d ~ P^exponent, clipped to class bounds
+  relative_span: 1.2        # (Dv0.9 - Dv0.1) / Dv0.5 of the log-normal volume distribution
+
+physics:
+  water_density_kg_m3: 998.0
+  air_density_kg_m3: 1.204
+  air_viscosity_pa_s: 1.81e-5
+  gravity_m_s2: 9.81
+  evaporation_lambda_coeff: 84.76   # um^2/s per degC of wet-bulb depression (Williamson-Threadgill)
+  drift_threshold_m: 0.5            # displacement beyond this counts as drift
+  spread_factor: [1.6, 2.2]         # stain diameter / droplet diameter on WSP, sampled uniformly
+  gpa_to_ul_cm2: 0.09354
+  min_detectable_droplet_um: 50     # WSP does not register smaller droplets
+
+mismatch:                   # hidden factors the predictive model never sees
+  levels:
+    none: {gust_sigma: 0.0, canopy_eta: [1.0, 1.0], wear_flow: [0.0, 0.0], wear_vmd: [0.0, 0.0]}
+    low:  {gust_sigma: 0.10, canopy_eta: [0.90, 1.0], wear_flow: [0.0, 0.05], wear_vmd: [-0.03, 0.0]}
+    med:  {gust_sigma: 0.20, canopy_eta: [0.75, 0.95], wear_flow: [0.0, 0.10], wear_vmd: [-0.06, 0.0]}
+    high: {gust_sigma: 0.30, canopy_eta: [0.60, 0.85], wear_flow: [0.05, 0.15], wear_vmd: [-0.10, -0.03]}
+  gust_ar1_phi: 0.7
+
+feedback:
+  alpha: 0.3
+  bias_clip_pp: 15.0
+  warmup_cards: 2
+  regime_bins:
+    u_cross_ms: [0.0, 2.0, 4.0, 99.0]
+    droplet_group: {fine: [VF, F, M], coarse: [C, VC, XC, UC]}
+
+selector:
+  lambda: 0.6
+  margin_pp: 3.0            # used when no prediction interval is available
+  use_interval_margin: true
+
+pass:
+  segments: 40
+  seeds: 20
