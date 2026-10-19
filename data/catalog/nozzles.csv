@@ -1,0 +1,317 @@
+family,size,pressure_psi,flow_gpm,droplet_class,spray_angle_deg,source,chart_spacing_in,notes
+TP65,01,30,0.087,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,01,35,0.094,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,01,40,0.1,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,01,50,0.11,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,01,60,0.12,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,015,30,0.13,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,015,35,0.14,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,015,40,0.15,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,015,50,0.17,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,015,60,0.18,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,02,30,0.17,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,02,35,0.19,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,02,40,0.2,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,02,50,0.22,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,02,60,0.24,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,03,30,0.26,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,03,35,0.28,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,03,40,0.3,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,03,50,0.34,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,03,60,0.37,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,04,30,0.35,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,04,35,0.37,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,04,40,0.4,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,04,50,0.45,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,04,60,0.49,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,05,30,0.43,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,05,35,0.47,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,05,40,0.5,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,05,50,0.56,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,05,60,0.61,F,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,06,30,0.52,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,06,35,0.56,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,06,40,0.6,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,06,50,0.67,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,06,60,0.73,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,08,30,0.69,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,08,35,0.75,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,08,40,0.8,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,08,50,0.89,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,08,60,0.98,M,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,10,30,0.87,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,10,35,0.94,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,10,40,1.0,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,10,50,1.12,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,10,60,1.22,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,15,30,1.3,VC,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,15,35,1.4,VC,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,15,40,1.5,VC,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,15,50,1.68,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+TP65,15,60,1.84,C,65,Docs/TP65Guide.jpg,20,class from 80deg column (D3); TP chart gives no TP65 class
+XR,01,15,0.061,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,01,20,0.071,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,01,30,0.087,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,01,40,0.1,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,01,50,0.11,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,01,60,0.12,VF,110,Docs/XRGuide.png,20,class from 110deg column
+XR,015,15,0.092,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,015,20,0.11,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,015,30,0.13,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,015,40,0.15,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,015,50,0.17,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,015,60,0.18,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,02,15,0.12,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,02,20,0.14,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,02,30,0.17,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,02,40,0.2,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,02,50,0.22,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,02,60,0.24,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,025,15,0.15,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,025,20,0.18,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,025,30,0.22,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,025,40,0.25,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,025,50,0.28,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,025,60,0.31,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,03,15,0.18,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,03,20,0.21,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,03,30,0.26,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,03,40,0.3,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,03,50,0.34,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,03,60,0.37,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,035,15,0.21,M,110,Docs/XRGuide.png,20,class from 80deg column (XR80035 only; no 110deg tip)
+XR,035,20,0.25,M,110,Docs/XRGuide.png,20,class from 80deg column (XR80035 only; no 110deg tip)
+XR,035,30,0.3,M,110,Docs/XRGuide.png,20,class from 80deg column (XR80035 only; no 110deg tip)
+XR,035,40,0.35,M,110,Docs/XRGuide.png,20,class from 80deg column (XR80035 only; no 110deg tip)
+XR,035,50,0.39,F,110,Docs/XRGuide.png,20,class from 80deg column (XR80035 only; no 110deg tip)
+XR,035,60,0.43,F,110,Docs/XRGuide.png,20,class from 80deg column (XR80035 only; no 110deg tip)
+XR,04,15,0.24,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,04,20,0.28,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,04,30,0.35,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,04,40,0.4,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,04,50,0.45,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,04,60,0.49,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,05,15,0.31,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,05,20,0.35,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,05,30,0.43,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,05,40,0.5,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,05,50,0.56,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,05,60,0.61,F,110,Docs/XRGuide.png,20,class from 110deg column
+XR,06,15,0.37,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,06,20,0.42,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,06,30,0.52,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,06,40,0.6,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,06,50,0.67,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,06,60,0.73,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,08,15,0.49,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,08,20,0.57,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,08,30,0.69,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,08,40,0.8,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,08,50,0.89,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,08,60,0.98,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,10,15,0.61,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,10,20,0.71,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,10,30,0.87,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,10,40,1.0,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,10,50,1.12,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,10,60,1.22,M,110,Docs/XRGuide.png,20,class from 110deg column
+XR,15,15,0.92,VC,110,Docs/XRGuide.png,20,class from 110deg column
+XR,15,20,1.06,VC,110,Docs/XRGuide.png,20,class from 110deg column
+XR,15,30,1.3,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,15,40,1.5,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,15,50,1.68,C,110,Docs/XRGuide.png,20,class from 110deg column
+XR,15,60,1.84,M,110,Docs/XRGuide.png,20,class from 110deg column
+DGX40,03,20,0.21,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,03,30,0.26,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,03,40,0.3,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,03,50,0.34,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,03,60,0.37,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,03,70,0.4,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,04,20,0.28,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,04,30,0.35,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,04,40,0.4,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,04,50,0.45,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,04,60,0.49,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,04,70,0.53,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,05,20,0.35,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,05,30,0.43,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,05,40,0.5,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,05,50,0.56,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,05,60,0.61,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,05,70,0.66,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,06,20,0.42,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,06,30,0.52,UC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,06,40,0.6,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,06,50,0.67,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,06,60,0.73,XC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+DGX40,06,70,0.79,VC,40,Docs/DGX40Guide.png,10,"chart at 10 in spacing; flow taken, GPA not copied (recompute at 20 in); class per chart (ISO 25358)"
+ULD,015,20,0.11,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,30,0.13,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,40,0.15,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,50,0.17,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,60,0.18,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,70,0.2,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,80,0.21,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,90,0.23,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,100,0.24,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,015,115,0.25,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,20,0.14,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,30,0.17,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,40,0.2,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,50,0.22,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,60,0.24,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,70,0.26,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,80,0.28,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,90,0.3,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,100,0.32,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,02,115,0.34,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,20,0.18,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,30,0.22,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,40,0.25,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,50,0.28,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,60,0.31,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,70,0.33,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,80,0.35,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,90,0.38,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,100,0.4,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,025,115,0.42,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,20,0.21,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,30,0.26,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,40,0.3,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,50,0.34,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,60,0.37,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,70,0.4,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,80,0.42,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,90,0.45,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,100,0.47,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,03,115,0.51,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,20,0.28,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,30,0.35,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,40,0.4,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,50,0.45,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,60,0.49,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,70,0.53,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,80,0.57,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,90,0.6,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,100,0.63,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,04,115,0.68,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,20,0.35,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,30,0.43,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,40,0.5,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,50,0.56,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,60,0.61,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,70,0.66,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,80,0.71,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,90,0.75,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,100,0.79,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,05,115,0.85,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,20,0.42,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,30,0.52,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,40,0.6,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,50,0.67,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,60,0.73,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,70,0.79,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,80,0.85,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,90,0.9,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,100,0.95,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,06,115,1.02,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,20,0.57,UC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,30,0.69,XC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,40,0.8,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,50,0.89,VC,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,60,0.98,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,70,1.06,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,80,1.13,C,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,90,1.2,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,100,1.26,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+ULD,08,115,1.36,M,120,Hypro ULD sales sheet uld-sales-sheet.pdf (pentair.com); Docs/ULDGuide.png low-res cross-check,20,droplet class ASABE S572.1 per Hypro
+3D,015,10,0.08,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote); flow printed to 2 dp (0.08), chart GPA columns imply ~0.076 so sqrt-law step 10->15 psi is off by rounding"
+3D,015,15,0.09,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,015,20,0.11,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,30,0.13,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,40,0.15,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,50,0.17,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,60,0.18,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,70,0.2,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,80,0.21,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,015,90,0.23,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,10,0.1,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,02,15,0.12,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,02,20,0.14,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,30,0.17,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,40,0.2,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,50,0.22,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,60,0.24,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,70,0.26,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,80,0.28,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,02,90,0.3,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,10,0.13,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,025,15,0.15,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,025,20,0.18,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,30,0.22,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,50,0.28,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,40,0.25,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,60,0.31,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,70,0.33,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,80,0.35,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,025,90,0.38,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,10,0.15,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,03,15,0.18,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,03,20,0.21,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,30,0.26,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,50,0.34,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,40,0.3,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,60,0.37,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,70,0.4,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,80,0.42,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,03,90,0.45,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,035,10,0.18,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"size printed as 35 on chart (3D035); class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,035,15,0.21,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"size printed as 35 on chart (3D035); class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,035,20,0.25,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,30,0.3,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,50,0.39,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,40,0.35,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,60,0.43,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,70,0.46,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,80,0.49,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,035,90,0.53,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,size printed as 35 on chart (3D035); class ASABE S572.1
+3D,04,10,0.2,XC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,04,15,0.24,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,04,20,0.28,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,30,0.35,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,50,0.45,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,40,0.4,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,60,0.49,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,70,0.53,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,80,0.57,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,04,90,0.6,F,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,10,0.25,XC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,05,15,0.31,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,05,20,0.35,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,30,0.43,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,50,0.56,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,40,0.5,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,60,0.61,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,70,0.66,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,80,0.71,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,05,90,0.75,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,10,0.3,XC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,06,15,0.37,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,06,20,0.42,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,30,0.52,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,50,0.67,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,40,0.6,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,60,0.73,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,70,0.79,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,80,0.85,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,06,90,0.9,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,10,0.4,XC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,08,15,0.49,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,"class ASABE S572.1; <15 psi: spray angle may be reduced, needs 30 in boom height (chart footnote)"
+3D,08,20,0.57,VC,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,30,0.69,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,50,0.89,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,40,0.8,C,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,60,0.98,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,70,1.06,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,80,1.13,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
+3D,08,90,1.2,M,100,Hypro 3D sell sheet 514-3d-nozzle-brochure-04-17.pdf (pentair.com); Docs/3DQGuide.png low-res cross-check,20,class ASABE S572.1
