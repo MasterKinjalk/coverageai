@@ -10,3 +10,4 @@ The course permits AI use. Each line records one AI-assisted work session.
 | 2026-10-18 | WP-01 | Claude Sonnet | Nozzle catalog: data/catalog/nozzles.csv (316 rows, 5 families; Hypro rows from official Pentair PDFs), gpa_checks.csv, experiments/validate_catalog.py, catalog.py (load/derive/candidates), tests/test_catalog.py |
 | 2026-10-18 | WP-06 | Claude Sonnet | feedback.py (eq. 3 bias, per-regime, warm-up, clip), loop.py (run_pass, oracle wrapper, slow loop, logs/summary), e2e rewired to loop, tests |
 | 2026-10-18 | WP-05 | Claude Sonnet 5.5 | Zenodo investigation of the Simoes 2025 dataset, `vision/real_data.py` loader (download, YOLOv8-polygon rasterization, tiling, summary CLI), tests, example figure, decision D9, draft email to authors |
+| 2026-10-18 | WP-02 | Claude Sonnet 5.5 | physics/ (droplets, evaporation, drift, coverage), simulator.py (SpraySimulator, begin_pass, simulate_batch), tests/test_simulator.py, experiments/sim_trends.py + figure |
