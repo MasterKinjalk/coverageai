@@ -51,12 +51,15 @@ def sample_conditions(n: int, seed: int) -> list[Conditions]:
     return out
 
 
-def evaluate(model, scenarios, selector: ConstrainedSelector, c_req: float, bias: float = 0.0):
-    """Run selector per scenario, score chosen setting under `model` as truth."""
+def evaluate(model, scenarios, selector: ConstrainedSelector, c_req: float, bias: float = 0.0,
+             truth=None):
+    """Run selector per scenario with `model`; score the chosen setting under `truth`
+    (defaults to `model`, i.e. no model error)."""
+    truth = truth or model
     cov, drift, gpa, infeas = [], [], [], 0
     for x in scenarios:
         u, info = selector.select(x, model, bias, c_req)
-        p = model.predict(x, u)
+        p = truth.predict(x, u)
         cov.append(p.coverage_pct)
         drift.append(p.drift_frac)
         gpa.append(selector._derive_fn(x, u).app_rate_gpa)
@@ -66,12 +69,14 @@ def evaluate(model, scenarios, selector: ConstrainedSelector, c_req: float, bias
             "mean_gpa": float(np.mean(gpa)), "infeasible_frac": infeas / len(scenarios)}
 
 
-def run_config(name, model, scenarios, c_req):
+def run_config(name, model, scenarios, c_req, truth=None):
+    """Selector uses `model`; outcomes and the fixed-setting baselines are scored under `truth`."""
+    truth = truth or model
     sel = ConstrainedSelector()
-    res = {"selector": evaluate(model, scenarios, sel, c_req)}
-    cov_m, _, _ = _stats_for_candidates(scenarios, model, sel.candidates, sel._derive_fn)
+    res = {"selector": evaluate(model, scenarios, sel, c_req, truth=truth)}
+    cov_m, _, _ = _stats_for_candidates(scenarios, truth, sel.candidates, sel._derive_fn)
     res["achievable_frac"] = float((cov_m.max(axis=0) >= c_req).mean())  # some candidate meets C_req
-    bf, st = best_fixed_setting(scenarios, model, c_req, sel.candidates, sel._derive_fn, return_stats=True)
+    bf, st = best_fixed_setting(scenarios, truth, c_req, sel.candidates, sel._derive_fn, return_stats=True)
     j = st["index"]
     res["best_fixed"] = {"setting": vars(bf), "success": float(st["success"][j]),
                          "mean_drift": float(st["mean_drift"][j]), "mean_gpa": float(st["mean_gpa"][j])}
@@ -90,7 +95,8 @@ def run_config(name, model, scenarios, c_req):
         None if m is None else res["selector"]["mean_drift"] < m["mean_drift"])
     res["lambda_sweep"] = {}
     for lam in (0.0, 0.3, 0.6, 1.0):
-        res["lambda_sweep"][str(lam)] = evaluate(model, scenarios, ConstrainedSelector(lam=lam), c_req)
+        res["lambda_sweep"][str(lam)] = evaluate(model, scenarios, ConstrainedSelector(lam=lam), c_req,
+                                                 truth=truth)
     # runtime
     import time
     s = ConstrainedSelector()
@@ -114,16 +120,32 @@ def main() -> None:
     c_req = float(spec()["c_req_pct"])
     scenarios = sample_conditions(args.n, args.seed)
 
-    models = {"mock": MockModel()}
+    models = {}
+    try:
+        import coverageai.catalog  # noqa: F401  real catalog: mock model cannot score its sizes
+    except ImportError:
+        models["mock"] = MockModel()
     try:
         from coverageai.simulator import SpraySimulator
         models["oracle"] = SimulatorOracle(SpraySimulator())
     except Exception as e:  # WP-02 not merged yet
         print(f"oracle skipped: {e!r}")
 
-    out = {"n": args.n, "seed": args.seed, "c_req": c_req, "configs": {}}
+    truths = {}
+    try:
+        from coverageai.model.predictor import SprayModel
+        path = ROOT / "models" / "spray_model_v1.joblib"
+        if "oracle" in models and path.exists():
+            models["spray"] = SprayModel.load(path)
+            truths["spray"] = models["oracle"]  # learned model selects, simulator scores
+    except Exception as e:
+        print(f"spray model skipped: {e!r}")
+
+    out = {"n": args.n, "seed": args.seed, "c_req": c_req, "configs": {},
+           "note": "mock/oracle: selector model = truth (isolates selector); "
+                   "spray: SprayModel selects, simulator (mismatch none) scores"}
     for name, model in models.items():
-        out["configs"][name] = run_config(name, model, scenarios, c_req)
+        out["configs"][name] = run_config(name, model, scenarios, c_req, truth=truths.get(name))
         r = out["configs"][name]
         print(f"[{name}] selector success {r['selector']['success']:.3f} drift {r['selector']['mean_drift']:.4f} "
               f"gpa {r['selector']['mean_gpa']:.2f} | best_fixed success {r['best_fixed']['success']:.3f} "

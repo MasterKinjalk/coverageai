@@ -3,58 +3,130 @@
   "seed": 0,
   "c_req": 30.0,
   "configs": {
-    "mock": {
+    "oracle": {
       "selector": {
-        "success": 0.705,
-        "mean_drift": 0.2328119670922194,
-        "mean_gpa": 28.17109741121253,
-        "infeasible_frac": 0.4
+        "success": 0.385,
+        "mean_drift": 0.010592461378934189,
+        "mean_gpa": 17.265431520726978,
+        "infeasible_frac": 0.0
       },
-      "achievable_frac": 0.705,
+      "achievable_frac": 1.0,
       "best_fixed": {
         "setting": {
           "family": "TP65",
-          "size": "08",
-          "pressure_psi": 60.0
+          "size": "15",
+          "pressure_psi": 55.0
         },
-        "success": 0.695,
-        "mean_drift": 0.2787784951771565,
-        "mean_gpa": 29.22105038279192
+        "success": 1.0,
+        "mean_drift": 0.017145130714365638,
+        "mean_gpa": 52.54420093838111
       },
-      "fixed_matched_success": null,
-      "selector_lower_drift_than_matched_fixed": null,
+      "fixed_matched_success": {
+        "setting": {
+          "family": "TP65",
+          "size": "15",
+          "pressure_psi": 30.0
+        },
+        "success": 0.59,
+        "mean_drift": 0.0033059227137119986,
+        "mean_gpa": 38.77069255908294
+      },
+      "selector_lower_drift_than_matched_fixed": false,
       "lambda_sweep": {
         "0.0": {
-          "success": 0.705,
-          "mean_drift": 0.2645709252859043,
-          "mean_gpa": 22.03498250990433,
-          "infeasible_frac": 0.4
+          "success": 0.28,
+          "mean_drift": 0.12439096604938811,
+          "mean_gpa": 12.022530171588398,
+          "infeasible_frac": 0.0
         },
         "0.3": {
-          "success": 0.705,
-          "mean_drift": 0.2612568692337247,
-          "mean_gpa": 22.410639707135175,
-          "infeasible_frac": 0.4
+          "success": 0.35,
+          "mean_drift": 0.03399254813137025,
+          "mean_gpa": 14.100852821918435,
+          "infeasible_frac": 0.0
         },
         "0.6": {
-          "success": 0.705,
-          "mean_drift": 0.2328119670922194,
-          "mean_gpa": 28.17109741121253,
-          "infeasible_frac": 0.4
+          "success": 0.4,
+          "mean_drift": 0.0116490937370075,
+          "mean_gpa": 17.0469160467328,
+          "infeasible_frac": 0.0
         },
         "1.0": {
-          "success": 0.705,
-          "mean_drift": 0.23082053423574778,
-          "mean_gpa": 29.129821841399494,
-          "infeasible_frac": 0.4
+          "success": 0.51,
+          "mean_drift": 0.003577735804545215,
+          "mean_gpa": 27.89059322178163,
+          "infeasible_frac": 0.0
         }
       },
       "runtime_ms": {
-        "total_mean": 0.536290000891313,
-        "model_mean": 0.2834020007867366,
-        "selector_only_mean": 0.25288800010457635
+        "total_mean": 557.7353659970686,
+        "model_mean": 554.5427280000877,
+        "selector_only_mean": 3.1926379969809204
       },
-      "n_candidates": 60
+      "n_candidates": 547
+    },
+    "spray": {
+      "selector": {
+        "success": 0.97,
+        "mean_drift": 0.013129837998127414,
+        "mean_gpa": 24.781648139871788,
+        "infeasible_frac": 0.0
+      },
+      "achievable_frac": 1.0,
+      "best_fixed": {
+        "setting": {
+          "family": "TP65",
+          "size": "15",
+          "pressure_psi": 55.0
+        },
+        "success": 1.0,
+        "mean_drift": 0.017145130714365638,
+        "mean_gpa": 52.54420093838111
+      },
+      "fixed_matched_success": {
+        "setting": {
+          "family": "XR",
+          "size": "15",
+          "pressure_psi": 45.0
+        },
+        "success": 0.98,
+        "mean_drift": 0.01666858945316055,
+        "mean_gpa": 47.49079092262573
+      },
+      "selector_lower_drift_than_matched_fixed": true,
+      "lambda_sweep": {
+        "0.0": {
+          "success": 0.935,
+          "mean_drift": 0.10506096453474587,
+          "mean_gpa": 17.911894923513763,
+          "infeasible_frac": 0.0
+        },
+        "0.3": {
+          "success": 0.945,
+          "mean_drift": 0.04501406447950825,
+          "mean_gpa": 19.878187106013296,
+          "infeasible_frac": 0.0
+        },
+        "0.6": {
+          "success": 0.965,
+          "mean_drift": 0.013129837998127414,
+          "mean_gpa": 24.781648139871788,
+          "infeasible_frac": 0.0
+        },
+        "1.0": {
+          "success": 0.96,
+          "mean_drift": 0.007191730861179957,
+          "mean_gpa": 33.62144583468155,
+          "infeasible_frac": 0.0
+        }
+      },
+      "runtime_ms": {
+        "total_mean": 19.806721997447312,
+        "model_mean": 17.433695994550362,
+        "selector_only_mean": 2.3730260028969496
+      },
+      "n_candidates": 547
     }
-  }
+  },
+  "note": "mock/oracle: selector model = truth (isolates selector); spray: SprayModel selects, simulator (mismatch none) scores"
 }
