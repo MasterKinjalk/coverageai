@@ -71,8 +71,10 @@ POLICY_LABEL = {"open": "open loop", "fast": "fast loop", "fast_slow": "fast + s
 _W: dict = {}
 
 
-def _init(model: str, verifier: str, model_path: str | None) -> None:
-    mods = integration.build_modules(model, verifier, model_path=model_path)
+def _init(model: str, verifier: str, model_path: str | None, record_weight: float,
+          n_jobs: int) -> None:
+    mods = integration.build_modules(model, verifier, model_path=model_path,
+                                     record_weight=record_weight, n_jobs=n_jobs)
     _W.update(model=model, base_model=copy.deepcopy(mods.model), modules={verifier: mods},
               main_verifier=verifier, model_path=model_path)
 
@@ -149,6 +151,15 @@ def ablation_cell(variant: dict, s: int, c_req: float) -> dict:
     mods = _mods(variant["verifier"])
     E = s + EVAL_OFFSET
     conds = scenarios.generate(scenarios.get(ABL_PRESET), s)
+    if variant.get("slow"):       # slow-loop variant: score the third pass of a 3-pass run
+        saved = mods.model
+        mods.model = copy.deepcopy(_W["base_model"])
+        mods.model.params["record_weight"] = variant["record_weight"]
+        try:
+            logs = run_passes_slow(conds, mods, s, ABL_MISMATCH, c_req, n_passes=SLOW_PASSES)
+        finally:
+            mods.model = saved
+        return {**variant, "seed": s, **pass_metrics(logs[-len(conds):], c_req)}
     fb = BiasFeedback(alpha=variant["alpha"], warmup_cards=variant["warmup"],
                       per_regime=variant["per_regime"])
     render = variant["verifier"] in ("b0", "b1")
@@ -393,7 +404,7 @@ def run_experiment(args) -> Path:
     presets = PRESETS[:2] if args.quick else PRESETS
     workers = args.workers or max(1, min(8, (os.cpu_count() or 2) - 2))
     t0 = time.time()
-    initargs = (model, verifier, args.model_path)
+    initargs = (model, verifier, args.model_path, args.record_weight, args.n_jobs)
     meta_mods = integration.build_modules(model, verifier, model_path=args.model_path)
     noise = ({"sd_pp": meta_mods.verifier.sd_pp, "bias_pp": meta_mods.verifier.bias_pp,
               "source": meta_mods.verifier.source} if hasattr(meta_mods.verifier, "sd_pp") else None)
@@ -440,7 +451,8 @@ def run_experiment(args) -> Path:
         "schema": "closed_loop/1", "model": model, "verifier": verifier, "c_req_pct": c_req,
         "seeds": seeds, "presets": list(presets), "mismatch": list(MISMATCH),
         "slow_passes": SLOW_PASSES, "eval_seed_offset": EVAL_OFFSET,
-        "noise_model": noise, "wall_s": time.time() - t0, "workers": workers,
+        "noise_model": noise, "record_weight": args.record_weight if model == "spray" else None,
+        "wall_s": time.time() - t0, "workers": workers,
         "runs": df.to_dict("records"),
         "slow_runs": pd.DataFrame(slow_rows).to_dict("records"),
         "ablation_runs": abl_rows,
@@ -468,6 +480,10 @@ def ablation_variants(args) -> list[dict]:
     add("global bias", "bias scope", per_regime=False)
     for vv in ("perfect", "noisy"):
         add(f"verifier={vv}", "verifier", verifier=vv)
+    if args.model == "spray":
+        for w in (1.0, 5.0, 30.0):
+            add(f"slow loop, record weight {w:g} (3 passes, final pass)", "slow-loop record weight",
+                slow=True, record_weight=w)
     for vv in ("b0", "b1"):
         if integration.image_verifier_available(vv) and not args.quick:
             add(f"verifier={vv} (rendered, {B0_SEEDS} seeds)", "verifier", verifier=vv)
@@ -534,7 +550,7 @@ def combine() -> None:
     combined = {
         "schema": "closed_loop_combined/1", "c_req_pct": next(iter(results.values()))["c_req_pct"],
         "models": {m: {k: r[k] for k in ("model", "verifier", "seeds", "presets", "noise_model",
-                                          "wall_s", "slow_passes", "eval_seed_offset")}
+                                          "record_weight", "wall_s", "slow_passes", "eval_seed_offset")}
                    | {"aggregate": agg[m].to_dict("records"),
                       "gap_recovery": gaps[m].to_dict("records"),
                       "ablation": abl[m].to_dict("records"),
@@ -577,6 +593,7 @@ def write_summary(results, agg, gaps, abl, slow) -> None:
         nz = res["noise_model"]
         L.append(f"## Model `{mdl}` ({n} seeds, verifier `{res['verifier']}`"
                  + (f", noise sd {nz['sd_pp']:.2f} pp, bias {nz['bias_pp']:+.2f} pp from {nz['source']}" if nz else "")
+                 + (f", slow-loop record weight {res['record_weight']:g}" if res.get("record_weight") else "")
                  + ")\n")
         g = gaps[mdl]
         pooled = g[(g["preset"] == "ALL")]
@@ -674,6 +691,9 @@ def main() -> None:
     ap.add_argument("--verifier", default="noisy", choices=["noisy", "perfect", "b0", "b1"])
     ap.add_argument("--model-path", default=None)
     ap.add_argument("--seeds", type=int, default=20)
+    ap.add_argument("--record-weight", type=float, default=30.0,
+                    help="SprayModel sample weight of slow-loop field records (spray model only)")
+    ap.add_argument("--n-jobs", type=int, default=2, help="LightGBM threads per worker (refits)")
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--no-ablation", action="store_true")

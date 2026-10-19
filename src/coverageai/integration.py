@@ -83,7 +83,9 @@ def find_spray_model_path(path: str | Path | None = None) -> Path | None:
     return next((c for c in cands if c.is_file()), None)
 
 
-def load_spray_model(path: str | Path | None = None):
+def load_spray_model(path: str | Path | None = None, **params):
+    """Load the trained SprayModel; keyword params update model.params (e.g.
+    record_weight for slow-loop refits, n_jobs for the LightGBM thread count)."""
     try:
         from coverageai.model.predictor import SprayModel
     except ImportError as e:   # WP-10 not merged
@@ -92,7 +94,9 @@ def load_spray_model(path: str | Path | None = None):
     p = find_spray_model_path(path)
     if p is None:
         raise FileNotFoundError(f"trained SprayModel not found (looked for {MODEL_FILENAME})")
-    return SprayModel.load(p)
+    m = SprayModel.load(p)
+    m.params.update({k: v for k, v in params.items() if v is not None})
+    return m
 
 
 def spray_model_available() -> bool:
@@ -173,7 +177,8 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
                   model_path: str | Path | None = None,
                   noise_sd_pp: float | None = None, noise_bias_pp: float | None = None,
                   noise_source: str | None = None, results_dir: Path | None = None,
-                  model_obj=None) -> Modules:
+                  model_obj=None, record_weight: float | None = None,
+                  n_jobs: int | None = None) -> Modules:
     """Assemble loop.Modules from real components (see module docstring)."""
     if model not in MODEL_CHOICES:
         raise ValueError(f"model must be one of {MODEL_CHOICES}, got {model!r}")
@@ -196,7 +201,7 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
         elif model == "oracle_nominal":
             mdl = NominalPhysicsModel(sim)
         else:
-            mdl = load_spray_model(model_path)
+            mdl = load_spray_model(model_path, record_weight=record_weight, n_jobs=n_jobs)
 
     if verifier == "perfect":
         ver = None
