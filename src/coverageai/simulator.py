@@ -205,6 +205,38 @@ class SpraySimulator:
             self.p["min_detectable_droplet_um"], self.card_w, self.card_h, rng)
         return DropletSample(diameters_um=diam, x_mm=xs, y_mm=ys, spread_factor=sf)
 
+    def _arrays_from_hidden(self, xs, us, ders, g, eta, ff, vf, sf, chunk: int = 4096,
+                            want_bins: bool = False) -> dict[str, np.ndarray]:
+        """Core evaluation for N segments given per-row hidden factors (arrays of length N)."""
+        n = len(xs)
+        vmd = np.array([d.vmd_um for d in ders])
+        gpa = np.array([d.app_rate_gpa for d in ders])
+        uc = np.array([d.u_cross_ms for d in ders])
+        ua = np.array([d.u_along_ms for d in ders])
+        h = np.array([x.boom_height_m for x in xs])
+        pr = np.array([u.pressure_psi for u in us])
+        t = np.array([x.temp_c for x in xs])
+        rh = np.array([x.rh_pct for x in xs])
+        keys = ("coverage", "deposition", "drift", "displacement", "stains")
+        out = {k: np.empty(n) for k in keys}
+        extra: dict[str, list] = {"d_f": [], "n_cm2": []}
+        for a in range(0, n, chunk):
+            s = slice(a, min(a + chunk, n))
+            r = self._core(vmd[s] * vf[s], gpa[s] * ff[s], uc[s] * g[s], ua[s] * g[s],
+                           h[s], t[s], rh[s], eta[s], sf[s], pr[s])
+            for k in keys:
+                out[k][s] = r[k]
+            if want_bins:
+                extra["d_f"].append(r["d_f"])
+                extra["n_cm2"].append(r["n_cm2"])
+        res = {"coverage_pct": out["coverage"], "deposition_ul_cm2": out["deposition"],
+               "drift_frac": out["drift"], "displacement_mm": out["displacement"],
+               "stains_per_cm2": out["stains"]}
+        if want_bins:
+            res["d_f"] = np.concatenate(extra["d_f"])
+            res["n_cm2"] = np.concatenate(extra["n_cm2"])
+        return res
+
     def simulate_arrays(self, xs: Sequence[Conditions], us: Sequence[Setting],
                         rng: np.random.Generator, mismatch: MismatchLevel = "none",
                         derived: Sequence[Derived] | None = None,
@@ -216,27 +248,46 @@ class SpraySimulator:
         """
         n = len(xs)
         ders = derived if derived is not None else [self.derive_fn(x, u) for x, u in zip(xs, us)]
-        vmd = np.array([d.vmd_um for d in ders])
-        gpa = np.array([d.app_rate_gpa for d in ders])
-        uc = np.array([d.u_cross_ms for d in ders])
-        ua = np.array([d.u_along_ms for d in ders])
-        h = np.array([x.boom_height_m for x in xs])
-        pr = np.array([u.pressure_psi for u in us])
-        t = np.array([x.temp_c for x in xs])
-        rh = np.array([x.rh_pct for x in xs])
         g, eta, ff, vf = self._draw_hidden_batch(n, rng, mismatch)
         sf = rng.uniform(*self.p["spread_factor"], n)
-        keys = ("coverage", "deposition", "drift", "displacement", "stains")
-        out = {k: np.empty(n) for k in keys}
-        for a in range(0, n, chunk):
-            s = slice(a, min(a + chunk, n))
-            r = self._core(vmd[s] * vf[s], gpa[s] * ff[s], uc[s] * g[s], ua[s] * g[s],
-                           h[s], t[s], rh[s], eta[s], sf[s], pr[s])
-            for k in keys:
-                out[k][s] = r[k]
-        return {"coverage_pct": out["coverage"], "deposition_ul_cm2": out["deposition"],
-                "drift_frac": out["drift"], "displacement_mm": out["displacement"],
-                "stains_per_cm2": out["stains"]}
+        return self._arrays_from_hidden(xs, us, ders, g, eta, ff, vf, sf, chunk)
+
+    def simulate_candidates(self, x: Conditions, us: Sequence[Setting], rng: np.random.Generator,
+                            mismatch: MismatchLevel = "none",
+                            derived: Sequence[Derived] | None = None) -> dict[str, np.ndarray]:
+        """Vectorized ``simulate`` of ONE segment x over many candidate settings ``us``.
+
+        Consumes ``rng`` exactly like ``simulate`` (one hidden draw, shared by every
+        candidate, honoring begin_pass state), so with ``rng = default_rng([seed, k])``
+        the result for candidate u equals ``simulate(x, u, default_rng([seed, k]), mismatch)``
+        (up to floating-point rounding). Used by the oracle policy.
+        """
+        n = len(us)
+        ders = derived if derived is not None else [self.derive_fn(x, u) for u in us]
+        hid, sf = self._draw_segment(rng, mismatch)
+        full = lambda v: np.full(n, v, float)  # noqa: E731
+        return self._arrays_from_hidden([x] * n, us, ders, full(hid.gust_mult),
+                                        full(hid.canopy_eta), full(hid.flow_factor),
+                                        full(hid.vmd_factor), full(sf))
+
+    def nominal_arrays(self, xs: Sequence[Conditions], us: Sequence[Setting],
+                       derived: Sequence[Derived] | None = None,
+                       interval_q: float = 0.1) -> dict[str, np.ndarray]:
+        """Mismatch-free expectation over the only remaining random factor, the WSP spread
+        factor: coverage at the mean spread factor plus coverage_lo / coverage_hi at the
+        ``interval_q`` / ``1 - interval_q`` quantiles of its uniform range. Deterministic."""
+        n = len(xs)
+        ders = derived if derived is not None else [self.derive_fn(x, u) for x, u in zip(xs, us)]
+        a, b = self.p["spread_factor"]
+        one = np.ones(n)
+        r = self._arrays_from_hidden(xs, us, ders, one, one, one, one, one * 0.5 * (a + b),
+                                     want_bins=True)
+        d_f, n_cm2 = r.pop("d_f"), r.pop("n_cm2")
+        md = self.p["min_detectable_droplet_um"]
+        for key, q in (("coverage_lo", interval_q), ("coverage_hi", 1.0 - interval_q)):
+            c, _ = cov_mod.boolean_coverage(n_cm2, d_f, one * (a + q * (b - a)), md)
+            r[key] = c * 100.0
+        return r
 
     def simulate_batch(self, xs: Sequence[Conditions], us: Sequence[Setting],
                        rng: np.random.Generator, mismatch: MismatchLevel = "none"

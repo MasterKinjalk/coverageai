@@ -1,6 +1,9 @@
 """End-to-end smoke test: runs every policy through coverageai.loop with mock modules.
 
 Usage: uv run python -m coverageai.e2e --smoke
+       uv run python -m coverageai.e2e --real [--model spray|oracle_nominal] [--verifier b0|b1|noisy]
+--real runs ONE 40-segment pass with the real modules (SpraySimulator, catalog, selector,
+rendered WSP cards, vision verifier) and writes results/runs/real_pass.{parquet,jsonl}.
 """
 from __future__ import annotations
 
@@ -69,11 +72,56 @@ def smoke(n_segments: int = 10, seed: int = 0, out: Path | None = None) -> list[
     return fast
 
 
+def run_real(model: str | None = None, verifier: str | None = None, preset: str = "gusty_afternoon",
+             mismatch: str = "med", policy: str = "fast", seed: int = 0,
+             out: Path | None = None) -> list[SegmentLog]:
+    """One full-length pass with real modules and rendered cards. Defaults: SprayModel if
+    trained and importable (else oracle_nominal), B0 verifier if merged (else the noisy
+    stand-in, with a printed warning)."""
+    from coverageai import integration, scenarios
+    if model is None:
+        model = "spray" if integration.spray_model_available() else "oracle_nominal"
+    if verifier is None:
+        verifier = "b0" if integration.image_verifier_available("b0") else "noisy"
+        if verifier == "noisy":
+            print("WARNING: vision.classical (B0) not available; using the noisy verifier (no images read)")
+    m = integration.build_modules(model, verifier)
+    conds = scenarios.generate(scenarios.get(preset), seed)
+    c_req = spec()["c_req_pct"]
+    fixed = None
+    if policy == "best_fixed":
+        from coverageai.selector import best_fixed_setting
+        fixed = best_fixed_setting(conds, m.model, c_req, derive_fn=m.derive_fn)
+    render = verifier in ("b0", "b1")
+    logs = run_pass(conds, policy, m, seed, mismatch, c_req, f"real_{policy}", render=render,
+                    fixed_setting=fixed)
+    save_logs(logs, out or ROOT / "results" / "runs" / "real_pass")
+    s = summarize(logs, c_req)
+    wall = sum(l.extra["t_select_s"] + l.extra["t_sim_s"] + l.extra["t_render_s"]
+               + l.extra["t_measure_s"] for l in logs)
+    print(f"real pass ok: model={model} verifier={verifier} preset={preset} mismatch={mismatch} "
+          f"policy={policy} n={s['n']} wall={wall:.1f}s")
+    print(f"  met={s['frac_met']:.2f} shortfall={s['mean_shortfall_pp']:.2f}pp "
+          f"vol={s['mean_volume_gpa']:.1f}GPA drift={s['mean_drift_frac']:.3f} "
+          f"retreat={s['n_retreat']} infeasible={s['n_infeasible']} "
+          f"mean|meas-true|={np.mean([abs(l.extra['true_cov_err']) for l in logs]):.2f}pp")
+    return logs
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--real", action="store_true", help="one 40-segment pass with real modules")
     ap.add_argument("--segments", type=int, default=10)
+    ap.add_argument("--model", default=None, choices=["spray", "oracle_nominal", "mock"])
+    ap.add_argument("--verifier", default=None, choices=["perfect", "noisy", "b0", "b1"])
+    ap.add_argument("--preset", default="gusty_afternoon")
+    ap.add_argument("--mismatch", default="med")
+    ap.add_argument("--policy", default="fast")
     args = ap.parse_args()
+    if args.real:
+        run_real(args.model, args.verifier, args.preset, args.mismatch, args.policy)
+        return
     res = run_all_policies(args.segments, out_dir=ROOT / "results" / "runs" / "smoke")
     c_req = spec()["c_req_pct"]
     print(f"smoke ok: {args.segments} segments per policy, mismatch=med, C_req={c_req}")

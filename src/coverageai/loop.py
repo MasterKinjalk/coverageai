@@ -22,6 +22,11 @@ Randomness / the hidden mismatch (important contract for the simulator):
   simulator must derive those factors from something shared across segments; with a
   per-segment rng alone they are redrawn at every segment.
 
+Pass state: if the simulator has begin_pass / end_pass (SpraySimulator) they bracket each
+pass, so canopy interception and nozzle wear persist over the pass and the gust is AR(1).
+A verifier with a `measure_outcome(outcome, rng)` method (integration.NoisyVerifier) is
+read directly from the true outcome (no image, no droplet sampling).
+
 Measurement: if `render` is True and both renderer and verifier are available, the
 card image is rendered and read by the verifier. Otherwise (verifier=None, renderer=None
 or render=False) the "perfect measurement" is used: meas.coverage_pct = outcome.coverage_pct.
@@ -91,7 +96,8 @@ class OracleModel:
     Shares the hidden mismatch by re-seeding: for segment k it calls the simulator with
     np.random.default_rng([seed, k]), the same stream the harness uses for the real
     outcome. `k` must be set by the caller before each selection (run_pass does).
-    Interval is degenerate (lo = hi = truth). Cost: one simulate() call per candidate.
+    Interval is degenerate (lo = hi = truth). predict_batch is vectorized
+    (simulator.simulate_candidates) when the simulator provides it; else one simulate() per candidate.
     """
 
     def __init__(self, simulator, mismatch: str, seed: int):
@@ -104,6 +110,15 @@ class OracleModel:
                           o.drift_frac, o.displacement_mm)
 
     def predict_batch(self, xs, us):
+        # Fast path: one conditions object repeated over many candidates (what the selector
+        # sends) -> a single vectorized evaluation with ONE shared hidden draw.
+        if hasattr(self.simulator, "simulate_candidates") and len(xs) and all(x is xs[0] for x in xs):
+            a = self.simulator.simulate_candidates(xs[0], us, segment_rng(self.seed, self.k),
+                                                   self.mismatch)
+            c = a["coverage_pct"]
+            return [Prediction(float(c[i]), float(c[i]), float(c[i]),
+                               float(a["deposition_ul_cm2"][i]), float(a["drift_frac"][i]),
+                               float(a["displacement_mm"][i])) for i in range(len(us))]
         return [self.predict(x, u) for x, u in zip(xs, us)]
 
     def fit(self, records) -> None:
@@ -144,9 +159,12 @@ def run_pass(conditions: list[Conditions], policy: str, modules: Modules, seed: 
     use_fb = policy in ("fast", "fast_slow")
     fb = (feedback or BiasFeedback()) if use_fb else None
     oracle = OracleModel(m.simulator, mismatch, seed) if policy == "oracle" else None
-    vision = render and m.verifier is not None and m.renderer is not None
+    direct = m.verifier is not None and hasattr(m.verifier, "measure_outcome")
+    vision = render and not direct and m.verifier is not None and m.renderer is not None
     ppm = px_per_mm()
     logs: list[SegmentLog] = []
+    if hasattr(m.simulator, "begin_pass"):   # persistent canopy/wear + AR(1) gust for the pass
+        m.simulator.begin_pass(seed, mismatch)
 
     for k, x in enumerate(conditions):
         rng_k = segment_rng(seed, k)
@@ -198,6 +216,8 @@ def run_pass(conditions: list[Conditions], policy: str, modules: Modules, seed: 
             image, _ = m.renderer.render(outcome, np.random.default_rng([seed, k, 1]))
             t_render = time.perf_counter() - t2
             meas = m.verifier.measure(image, ppm)
+        elif direct:        # image-free noisy verifier: measures the true outcome plus error
+            meas = m.verifier.measure_outcome(outcome, np.random.default_rng([seed, k, 2]))
         else:
             meas = _perfect_measurement(outcome)
 
@@ -215,6 +235,8 @@ def run_pass(conditions: list[Conditions], policy: str, modules: Modules, seed: 
             residual=meas.coverage_pct - corrected, bias=bias,
             flagged_retreat=retreat_flag(meas),
             selector_infeasible=bool(info.get("infeasible", False)), extra=extra))
+    if hasattr(m.simulator, "end_pass"):
+        m.simulator.end_pass()
     return logs
 
 
