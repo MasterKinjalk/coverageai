@@ -1,0 +1,53 @@
+{
+  "root": "data/external/simoes2025",
+  "subsets": {
+    "synthetic": {
+      "available": true,
+      "n_images": 300,
+      "image_sizes_wxh": [
+        "1497x512",
+        "1871x640",
+        "2104x720"
+      ],
+      "n_droplets_total": 635839,
+      "n_droplets_mean": 2119.463333333333,
+      "n_droplets_min": 223,
+      "n_droplets_max": 4978,
+      "coverage_pct_mean": 12.977845677521065,
+      "coverage_pct_min": 1.4548347063793832,
+      "coverage_pct_max": 40.99174912324649,
+      "px_per_mm_inferred": [
+        19.7,
+        24.62,
+        27.68
+      ]
+    },
+    "real": {
+      "n_images": 0,
+      "available": false
+    }
+  },
+  "zenodo": {
+    "concept_record": "13995949",
+    "versions": [
+      {
+        "id": 14010262,
+        "title": "Water-Sensitive Paper Droplet Annotation",
+        "date": "2024-10-29",
+        "access": "restricted",
+        "license": "cc-by-4.0",
+        "n_files": 0
+      },
+      {
+        "id": 13995950,
+        "title": "Synthetic Water-Sensitive Paper Droplet Annotation",
+        "date": "2024-10-26",
+        "access": "open",
+        "license": "cc-by-4.0",
+        "n_files": 1
+      }
+    ],
+    "license": "CC BY 4.0",
+    "label_format": "YOLOv8 polygon (normalised xy)"
+  }
+}
