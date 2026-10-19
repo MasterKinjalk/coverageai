@@ -41,6 +41,36 @@ def test_model_forward_shape():
     assert out.shape == (2, 1, 64, 96)
 
 
+def test_conv_bn_fusion_preserves_outputs():
+    model = unet.build_model(pretrained=False)
+    for m in model.modules():                         # non-trivial BN statistics
+        if isinstance(m, torch.nn.BatchNorm2d):
+            m.running_mean.normal_(0, 0.5)
+            m.running_var.uniform_(0.5, 2.0)
+            m.weight.data.uniform_(0.5, 1.5)
+            m.bias.data.normal_(0, 0.3)
+    model.eval()
+    x = torch.randn(1, 3, 96, 128)
+    with torch.inference_mode():
+        before = model(x)
+    unet.fuse_conv_bn(model)
+    assert not any(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules())
+    with torch.inference_mode():
+        after = model(x)
+    assert torch.allclose(before, after, atol=1e-4)
+
+
+def test_predict_proba_tiling_matches_single_pass():
+    model = unet.build_model(pretrained=False).eval()
+    unet.fuse_conv_bn(model)
+    rng = np.random.default_rng(0)
+    img = rng.integers(0, 255, (96, 224, 3), dtype=np.uint8)
+    whole = unet.predict_proba(model, img, tile=(96, 224), overlap=32)
+    tiled = unet.predict_proba(model, img, tile=(96, 128), overlap=32)
+    assert whole.shape == tiled.shape == (96, 224)
+    assert np.abs(whole - tiled).max() < 0.15           # only tile-border effects
+
+
 def test_pairing_flat_and_folder_layouts(tmp_path):
     img = np.full((40, 50, 3), 200, np.uint8)
     msk = np.zeros((40, 50), np.uint8)
@@ -156,3 +186,30 @@ def test_evaluate_writes_outputs(trained, toy_dir, tmp_path):
     assert saved["overall"]["n"] == 2 and "coverage_mae_pp" in saved["overall"]
     assert set(saved["by_band"]) == {"0-10", "10-20", "20-30", "30-45", "45-60", "60-100"}
     assert res["overall"]["iou"] >= 0.0
+
+
+def test_splits_json_layout(tmp_path):
+    """WP-03 layout: images/, masks/, meta/ plus splits.json with integer ids."""
+    for d in ("images", "masks", "meta"):
+        (tmp_path / d).mkdir()
+    img = np.full((40, 50, 3), 200, np.uint8)
+    msk = np.zeros((40, 50), np.uint8)
+    for i in range(6):
+        cv2.imwrite(str(tmp_path / "images" / f"{i:05d}.png"), img)
+        cv2.imwrite(str(tmp_path / "masks" / f"{i:05d}.png"), msk)
+        (tmp_path / "meta" / f"{i:05d}.json").write_text(json.dumps({"px_per_mm": 22.0, "true_coverage_pct": 1.0}))
+    (tmp_path / "splits.json").write_text(json.dumps({"train": [0, 2, 3], "val": [1], "test": [4, 5]}))
+    assert [p.stem for p in unet.split_pairs(tmp_path, "train")] == ["00000", "00002", "00003"]
+    test = unet.split_pairs(tmp_path, "test")
+    assert [p.stem for p in test] == ["00004", "00005"]
+    assert unet.meta_get(unet.read_meta(test[0].meta), ["px_per_mm"]) == 22.0
+
+
+def test_hull_card_roi_finds_card_on_gray_background():
+    img = np.full((200, 400, 3), 128, np.uint8)
+    img[30:170, 50:350] = (244, 216, 64)             # yellow card
+    img[60:90, 100:140] = (25, 45, 130)              # a stain on the card
+    roi = unet.hull_card_roi(img)
+    assert roi is not None
+    assert abs(int(roi.sum()) - 140 * 300) / (140 * 300) < 0.02
+    assert roi[75, 120] and not roi[5, 5]

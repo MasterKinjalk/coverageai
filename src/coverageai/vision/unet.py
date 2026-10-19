@@ -181,6 +181,17 @@ def split_pairs(data_dir: str | Path, split: str, ps: PairSpec | None = None,
     if (data_dir / split).is_dir():
         return find_pairs(data_dir / split, ps)
     allp = find_pairs(data_dir, ps)
+    sj = data_dir / "splits.json"                  # WP-03 layout: {"train": [ids], "val": [...], "test": [...]}
+    if sj.is_file():
+        try:
+            ids = json.loads(sj.read_text()).get(split)
+        except ValueError:
+            ids = None
+        if ids is not None:
+            def _key(x: Any) -> str:
+                return str(int(x)) if str(x).isdigit() else str(x)
+            want = {_key(i) for i in ids}
+            return [p for p in allp if _key(p.stem) in want]
     warnings.warn(f"{data_dir}/{split} not found; using a deterministic split of {len(allp)} pairs")
     n = len(allp)
     n_tr, n_va = int(round(fractions[0] * n)), int(round(fractions[1] * n))
@@ -372,6 +383,16 @@ def _cosine_lr(step: int, total: int, lr0: float, warmup: int = 30, lr_min_frac:
     return lr0 * (lr_min_frac + (1 - lr_min_frac) * 0.5 * (1 + math.cos(math.pi * t)))
 
 
+def _resolve_amp(amp: str, device: str) -> str:
+    if not device.startswith("cuda") or amp in ("none", "off", "fp32"):
+        return "none"
+    if amp == "auto":
+        return "bf16" if torch.cuda.is_bf16_supported() else "fp16"
+    if amp not in ("bf16", "fp16"):
+        raise ValueError(f"amp must be auto|bf16|fp16|none, got {amp!r}")
+    return amp
+
+
 def _resolve_device(device: str) -> str:
     if device == "auto":
         return "cuda" if HAS_TORCH and torch.cuda.is_available() else "cpu"
@@ -411,10 +432,14 @@ def train(data_dir: str | Path, out: str | Path = "models/unet_v1.pt", epochs: i
           crops_per_card: int = 4, val_crops_per_card: int = 2, max_steps_per_epoch: int | None = None,
           num_workers: int = 0, log_path: str | Path = "results/unet_train_log.csv",
           pair_spec: PairSpec | None = None, train_split: str = "train", val_split: str = "val",
-          aug: AugConfig | None = None, verbose: bool = True) -> dict[str, Any]:
+          aug: AugConfig | None = None, amp: str = "auto", cache_mb: float = 6000.0,
+          verbose: bool = True) -> dict[str, Any]:
     """Train and save the best-val-Dice weights to `out`. Stops at `epochs`, when val Dice has not
     improved for `patience` epochs, or at the `max_minutes` wall-clock cap. The cosine schedule is
-    stretched/compressed to the epochs that fit in the time cap (estimated after epoch 1)."""
+    stretched/compressed to the epochs that fit in the time cap (estimated after epochs 1 and 2).
+    `amp`: "auto" (bf16 on a bf16-capable GPU, fp16 on other GPUs, off on CPU), "bf16", "fp16" or "none".
+    Also writes `<out stem>.last.pt` after every epoch. Images are cached in RAM only when
+    `num_workers == 0` and the split fits in `cache_mb`."""
     _require_torch()
     t_start = time.perf_counter()
     device = _resolve_device(device)
@@ -423,19 +448,26 @@ def train(data_dir: str | Path, out: str | Path = "models/unet_v1.pt", epochs: i
     cv2.setNumThreads(1)
     tr_pairs = split_pairs(data_dir, train_split, pair_spec)
     va_pairs = split_pairs(data_dir, val_split, pair_spec)
-    ds_tr = CardDataset(tr_pairs, crop, crops_per_card, True, seed, aug)
-    ds_va = CardDataset(va_pairs, crop, val_crops_per_card, False, seed, aug)
+    cache = cache_mb if num_workers == 0 else 0.0
+    ds_tr = CardDataset(tr_pairs, crop, crops_per_card, True, seed, aug, cache)
+    ds_va = CardDataset(va_pairs, crop, val_crops_per_card, False, seed, aug, cache)
     g = torch.Generator().manual_seed(seed)
     dl_tr = DataLoader(ds_tr, batch_size=batch, shuffle=True, drop_last=len(ds_tr) >= batch, generator=g,
-                       num_workers=num_workers, persistent_workers=num_workers > 0)
-    dl_va = DataLoader(ds_va, batch_size=batch, shuffle=False, num_workers=0)
+                       num_workers=num_workers, persistent_workers=num_workers > 0,
+                       pin_memory=device.startswith("cuda"))
+    dl_va = DataLoader(ds_va, batch_size=batch, shuffle=False, num_workers=min(num_workers, 2),
+                       pin_memory=device.startswith("cuda"))
     model = build_model(encoder, pretrained, decoder_channels).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     steps_per_epoch = min(len(dl_tr), max_steps_per_epoch or len(dl_tr))
     total_steps = epochs * steps_per_epoch
     budget_s = max_minutes * 60.0
-    use_amp = device.startswith("cuda")
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    amp_mode = _resolve_amp(amp, device)
+    use_amp = amp_mode != "none"
+    amp_dtype = torch.bfloat16 if amp_mode == "bf16" else torch.float16
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_mode == "fp16")
+    if device.startswith("cuda"):
+        torch.backends.cudnn.benchmark = True
     log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     cols = ["epoch", "step", "lr", "train_loss", "val_loss", "val_dice", "val_iou", "epoch_s", "elapsed_s"]
@@ -457,8 +489,8 @@ def train(data_dir: str | Path, out: str | Path = "models/unet_v1.pt", epochs: i
                 cur_lr = _cosine_lr(step, total_steps, lr)
                 for gp in opt.param_groups:
                     gp["lr"] = cur_lr
-                x, y = x.to(device), y.to(device)
-                with torch.autocast(device_type="cuda", enabled=use_amp):
+                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+                with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=use_amp):
                     loss = bce_dice_loss(model(x).float(), y)
                 opt.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward()
@@ -481,18 +513,20 @@ def train(data_dir: str | Path, out: str | Path = "models/unet_v1.pt", epochs: i
             if verbose:
                 print(f"epoch {ep + 1}/{eff_epochs} train {row['train_loss']:.4f} val_dice {val['val_dice']:.4f} "
                       f"val_iou {val['val_iou']:.4f} lr {cur_lr:.2e} {ep_s:.0f}s (total {elapsed / 60:.1f} min)", flush=True)
+            ck_meta = {**meta_base, "epoch": ep + 1, "val_dice": val["val_dice"], "val_iou": val["val_iou"],
+                       "amp": amp_mode}
+            save_checkpoint(Path(out).with_suffix(".last.pt"), model, ck_meta)
             if val["val_dice"] > best:
                 best, bad = val["val_dice"], 0
-                save_checkpoint(out, model, {**meta_base, "epoch": ep + 1, "val_dice": best, "val_iou": val["val_iou"]})
+                save_checkpoint(out, model, {**ck_meta, "val_dice": best})
             else:
                 bad += 1
             if stop_reason == "max_minutes":
                 break
-            if ep == 0:  # fit the cosine schedule into the wall-clock cap
-                fit = max(1, int(budget_s // max(ep_s, 1e-3)))
-                if fit < epochs:
-                    eff_epochs = fit
-                    total_steps = eff_epochs * steps_per_epoch
+            if ep < 2:  # fit the cosine schedule into the wall-clock cap
+                fit = ep + 1 + int(max(budget_s - elapsed, 0.0) // max(ep_s, 1e-3))
+                eff_epochs = max(ep + 1, min(epochs, fit))
+                total_steps = eff_epochs * steps_per_epoch
             if ep + 1 >= eff_epochs:
                 stop_reason = "epochs" if eff_epochs == epochs else "max_minutes"
                 break
@@ -512,8 +546,23 @@ def train(data_dir: str | Path, out: str | Path = "models/unet_v1.pt", epochs: i
 
 # ====================================================================== inference
 
-def load_checkpoint(path: str | Path, device: str = "cpu"):
-    """Return (model in eval mode, metadata dict)."""
+def fuse_conv_bn(module) -> None:
+    """In place: fold each eval-mode BatchNorm2d into the Conv2d right before it (inference only).
+    Saves about 10% of CPU inference time; outputs are unchanged up to float rounding."""
+    from torch.nn.utils.fusion import fuse_conv_bn_eval
+    for child in module.children():
+        fuse_conv_bn(child)
+    if isinstance(module, torch.nn.Sequential):
+        keys = list(module._modules.keys())
+        for k1, k2 in zip(keys, keys[1:]):
+            a, b = module._modules[k1], module._modules[k2]
+            if isinstance(a, torch.nn.Conv2d) and isinstance(b, torch.nn.BatchNorm2d):
+                module._modules[k1] = fuse_conv_bn_eval(a, b)
+                module._modules[k2] = torch.nn.Identity()
+
+
+def load_checkpoint(path: str | Path, device: str = "cpu", fuse: bool = True):
+    """Return (model in eval mode, metadata dict). `fuse` folds BatchNorm into convs (inference only)."""
     _require_torch()
     p = Path(path)
     if not p.is_absolute() and not p.exists() and (ROOT / p).exists():
@@ -523,6 +572,8 @@ def load_checkpoint(path: str | Path, device: str = "cpu"):
                         decoder_channels=ck.get("decoder_channels", DEFAULT_DECODER))
     model.load_state_dict(ck["state_dict"])
     model.to(device).eval()
+    if fuse:
+        fuse_conv_bn(model)
     return model, {k: v for k, v in ck.items() if k != "state_dict"}
 
 
@@ -535,38 +586,47 @@ def _positions(n: int, tile: int, stride: int) -> list[int]:
     return pos
 
 
-def _blend_window(tile: int, overlap: int) -> np.ndarray:
-    """Separable ramp: 1 in the interior, linear down to ~0.05 over `overlap` px at the edges."""
-    ramp = np.ones(tile, np.float32)
-    k = max(min(overlap, tile // 2), 1)
+def _ramp(n: int, overlap: int) -> np.ndarray:
+    """1 in the interior, linear down to ~0.05 over `overlap` px at both ends."""
+    r = np.ones(n, np.float32)
+    k = max(min(overlap, n // 2), 1)
     edge = np.linspace(0.05, 1.0, k, dtype=np.float32)
-    ramp[:k], ramp[-k:] = edge, edge[::-1]
-    return np.outer(ramp, ramp)
+    r[:k], r[-k:] = edge, edge[::-1]
+    return r
 
 
-def predict_proba(model, image: np.ndarray, tile: int = 384, overlap: int = 64, batch: int = 4,
-                  device: str = "cpu") -> np.ndarray:
-    """Sliding-window sigmoid probabilities for an RGB uint8 image (float32 HxW). Tiles overlap by
-    `overlap` px and are blended with a ramp window; images smaller than a tile are reflect-padded."""
+def _ceil32(n: int) -> int:
+    return -(-n // 32) * 32
+
+
+def predict_proba(model, image: np.ndarray, tile: int | tuple[int, int] = (832, 640), overlap: int = 32,
+                  batch: int = 1, device: str = "cpu") -> np.ndarray:
+    """Sliding-window sigmoid probabilities for an RGB uint8 image (float32 HxW).
+
+    `tile` is (height, width) or an int; each side is clipped to the image rounded up to a multiple of 32,
+    so a 614 px tall card is covered by a single row of tiles. Tiles overlap by `overlap` px and are blended
+    with a ramp window; the image is mirror-padded to the tile size when smaller."""
     _require_torch()
+    th, tw = (tile, tile) if isinstance(tile, int) else tile
     h, w = image.shape[:2]
-    ph, pw = max(tile - h, 0), max(tile - w, 0)
+    th, tw = min(th, _ceil32(h)), min(tw, _ceil32(w))
+    ph, pw = max(th - h, 0), max(tw - w, 0)
     img = np.pad(image, ((0, ph), (0, pw), (0, 0)), mode="symmetric") if (ph or pw) else image
     H, W = img.shape[:2]
-    stride = max(tile - overlap, 1)
-    coords = [(y, x) for y in _positions(H, tile, stride) for x in _positions(W, tile, stride)]
-    win = _blend_window(tile, overlap)
+    ys, xs = _positions(H, th, max(th - overlap, 1)), _positions(W, tw, max(tw - overlap, 1))
+    coords = [(y, x) for y in ys for x in xs]
+    win = np.outer(_ramp(th, overlap), _ramp(tw, overlap))
     acc = np.zeros((H, W), np.float32)
     wsum = np.zeros((H, W), np.float32)
     norm = to_tensor_array(img)
     with torch.inference_mode():
         for i in range(0, len(coords), batch):
             chunk = coords[i:i + batch]
-            xb = torch.from_numpy(np.stack([norm[:, y:y + tile, x:x + tile] for y, x in chunk])).to(device)
+            xb = torch.from_numpy(np.stack([norm[:, y:y + th, x:x + tw] for y, x in chunk])).to(device)
             pb = torch.sigmoid(model(xb))[:, 0].float().cpu().numpy()
             for (y, x), p in zip(chunk, pb):
-                acc[y:y + tile, x:x + tile] += p * win
-                wsum[y:y + tile, x:x + tile] += win
+                acc[y:y + th, x:x + tw] += p * win
+                wsum[y:y + th, x:x + tw] += win
     return (acc / np.maximum(wsum, 1e-6))[:h, :w]
 
 
@@ -608,6 +668,25 @@ def volume_percentiles(d_um: np.ndarray, qs: Sequence[float] = (0.1, 0.5, 0.9)) 
     return [float(np.interp(q, cum, d)) for q in qs]
 
 
+def hull_card_roi(image: np.ndarray, sat_thresh: int = 55) -> np.ndarray | None:
+    """Card mask for a yellow WSP card on a neutral background: convex hull of the largest saturated
+    region (paper and stains are both saturated; the background is gray). None when nothing is found."""
+    hsv = cv2.cvtColor(np.ascontiguousarray(image[..., :3]), cv2.COLOR_RGB2HSV)
+    sat = (hsv[..., 1] > sat_thresh).astype(np.uint8)
+    sat = cv2.morphologyEx(sat, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(sat, connectivity=8)
+    if n <= 1:
+        return None
+    k = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+    cnts, _ = cv2.findContours((lab == k).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None
+    hull = cv2.convexHull(np.vstack(cnts))
+    roi = np.zeros(image.shape[:2], np.uint8)
+    cv2.fillConvexPoly(roi, hull, 1)
+    return roi.astype(bool)
+
+
 # ---------------------------------------------------------------- verifier
 
 class UNetVerifier:
@@ -615,25 +694,30 @@ class UNetVerifier:
     `contracts.Verifier` protocol.
 
     Card ROI: reuses `coverageai.vision.classical.ClassicalVerifier` card detection when that
-    module is importable, otherwise the whole image is the card.
+    module is importable, otherwise a saturation convex-hull detector, otherwise the whole image.
     """
 
-    def __init__(self, weights: str | Path = "models/unet_v1.pt", device: str = "cpu", tile: int = 384,
-                 overlap: int = 64, batch: int = 4, threshold: float = 0.5, num_threads: int | None = None,
-                 use_classical_roi: bool = True, min_area_px: int = 4, resize_tol: float = 0.1):
+    def __init__(self, weights: str | Path = "models/unet_v1.pt", device: str = "cpu",
+                 tile: int | tuple[int, int] = (832, 640), overlap: int = 32, batch: int = 1,
+                 threshold: float = 0.5, num_threads: int | None = None,
+                 roi_mode: str = "auto", min_area_px: int = 4, resize_tol: float = 0.25):
         _require_torch()
         self.device, self.tile, self.overlap, self.batch = device, tile, overlap, batch
         self.threshold, self.min_area_px, self.resize_tol = threshold, min_area_px, resize_tol
         if device == "cpu":
-            torch.set_num_threads(num_threads or max(1, min(os.cpu_count() or 1, 8)))
+            # half the logical CPUs: hyper-threads / efficiency cores slow conv inference down
+            torch.set_num_threads(num_threads or max(1, min((os.cpu_count() or 2) // 2, 8)))
         self.model, self.meta = load_checkpoint(weights, device)
         self.train_ppm = float(self.meta.get("train_px_per_mm", _spec_ppm()))
         s = spec()
         self.acceptable_min = s["coverage_classes"]["acceptable_min"]
         self.marginal_min = s["coverage_classes"]["marginal_min"]
         self.spread = float(np.mean(s["physics"]["spread_factor"]))
+        if roi_mode not in ("auto", "classical", "hull", "full"):
+            raise ValueError("roi_mode must be auto|classical|hull|full")
+        self.roi_mode = roi_mode
         self._classical = None
-        if use_classical_roi:
+        if roi_mode in ("auto", "classical"):
             try:
                 from coverageai.vision.classical import ClassicalVerifier  # type: ignore
                 self._classical = ClassicalVerifier()
@@ -641,21 +725,33 @@ class UNetVerifier:
                 self._classical = None
 
     # -- card ROI
-    def card_roi(self, image: np.ndarray, px_per_mm: float) -> np.ndarray:
-        full = np.ones(image.shape[:2], bool)
+    def _classical_roi(self, image: np.ndarray, px_per_mm: float) -> np.ndarray | None:
         if self._classical is None or not hasattr(self._classical, "segment"):
-            return full
+            return None
         try:
             try:
                 res = self._classical.segment(image)
             except TypeError:
                 res = self._classical.segment(image, px_per_mm)
-            roi = np.asarray(res[1]).astype(bool)
+            return np.asarray(res[1]).astype(bool)
         except Exception:
+            return None
+
+    def card_roi(self, image: np.ndarray, px_per_mm: float) -> np.ndarray:
+        """Boolean card mask. auto: ClassicalVerifier's ROI when importable, else the saturation hull
+        (`hull_card_roi`), else the whole image. Implausible ROIs (< 20% of the image) are rejected."""
+        full = np.ones(image.shape[:2], bool)
+        if self.roi_mode == "full":
             return full
-        if roi.shape != full.shape or roi.mean() < 0.2:
-            return full
-        return roi
+        cands = []
+        if self.roi_mode in ("auto", "classical"):
+            cands.append(self._classical_roi(image, px_per_mm))
+        if self.roi_mode in ("auto", "hull"):
+            cands.append(hull_card_roi(image))
+        for roi in cands:
+            if roi is not None and roi.shape == full.shape and roi.mean() >= 0.2:
+                return roi
+        return full
 
     # -- segmentation
     def probability(self, image: np.ndarray, px_per_mm: float) -> np.ndarray:
@@ -671,7 +767,16 @@ class UNetVerifier:
         """(stain mask, card ROI mask), both boolean, same shape as `image`."""
         ppm = px_per_mm or self.train_ppm
         roi = self.card_roi(image, ppm)
-        mask = (self.probability(image, ppm) > self.threshold) & roi
+        h, w = roi.shape
+        ys, xs = np.flatnonzero(roi.any(1)), np.flatnonzero(roi.any(0))
+        if len(ys) == 0:
+            return np.zeros_like(roi), roi
+        pad = 16                                   # run the network on the card's bounding box only
+        y0, y1 = max(ys[0] - pad, 0), min(ys[-1] + 1 + pad, h)
+        x0, x1 = max(xs[0] - pad, 0), min(xs[-1] + 1 + pad, w)
+        prob = self.probability(image[y0:y1, x0:x1], ppm)
+        mask = np.zeros((h, w), bool)
+        mask[y0:y1, x0:x1] = (prob > self.threshold) & roi[y0:y1, x0:x1]
         return mask, roi
 
     # -- Verifier protocol
@@ -717,8 +822,10 @@ def evaluate(data_dir: str | Path, split: str = "test", weights: str | Path = "m
              fig_path: str | Path | None = "experiments/figures/b1_parity.png", device: str = "cpu",
              pair_spec: PairSpec | None = None, max_cards: int | None = None, verifier: Any = None,
              verbose: bool = True) -> dict[str, Any]:
-    """Run the verifier over a split. Truth = coverage of the GT mask (inside the same ROI); metrics:
-    coverage MAE (pp), IoU, 3-class agreement, runtime, overall and stratified by coverage band."""
+    """Run the verifier over a split. Truth = the card's true coverage from the per-card JSON
+    (`true_coverage_pct`, defined on the undistorted card); falls back to the GT mask inside the
+    detected ROI when no JSON is present. Metrics: coverage MAE (pp), IoU of the stain mask, 3-class
+    agreement, runtime, overall and stratified by coverage band. The mask-based MAE is also reported."""
     pairs = split_pairs(data_dir, split, pair_spec)[:max_cards]
     ver = verifier or UNetVerifier(weights, device)
     rows = []
@@ -728,11 +835,13 @@ def evaluate(data_dir: str | Path, split: str = "test", weights: str | Path = "m
         ppm = float(meta_get(meta, ["px_per_mm", "pixels_per_mm", "ppm"], _spec_ppm()))
         meas, mask, roi = ver._measure_full(img, ppm)
         gt_b = gt.astype(bool) & roi
-        true_cov = 100.0 * gt_b.sum() / max(int(roi.sum()), 1)
+        mask_cov = 100.0 * gt_b.sum() / max(int(roi.sum()), 1)
         union = (mask | gt_b).sum()
         iou = float((mask & gt_b).sum() / union) if union else 1.0
-        meta_cov = meta_get(meta, ["coverage_pct", "coverage"], None)
-        rows.append({"stem": p.stem, "true_cov": float(true_cov), "pred_cov": meas.coverage_pct, "iou": iou,
+        meta_cov = meta_get(meta, ["true_coverage_pct", "coverage_pct", "coverage"], None)
+        true_cov = mask_cov if meta_cov is None else float(meta_cov)
+        rows.append({"stem": p.stem, "true_cov": float(true_cov), "mask_cov": float(mask_cov),
+                     "pred_cov": meas.coverage_pct, "iou": iou,
                      "true_class": coverage_class(true_cov), "pred_class": meas.coverage_class,
                      "runtime_s": meas.runtime_s, "meta_cov": None if meta_cov is None else float(meta_cov)})
         if verbose and (i + 1) % 10 == 0:
@@ -742,10 +851,9 @@ def evaluate(data_dir: str | Path, split: str = "test", weights: str | Path = "m
     for lo, hi in BANDS:
         sel = [r for r in rows if lo <= r["true_cov"] < hi]
         result["by_band"][f"{lo:g}-{min(hi, 100):g}"] = _band_stats(sel)
-    mc = [r for r in rows if r["meta_cov"] is not None]
-    if mc:
-        result["overall"]["coverage_mae_vs_json_pp"] = float(np.mean([abs(r["pred_cov"] - r["meta_cov"]) for r in mc]))
+    result["truth"] = "json" if all(r["meta_cov"] is not None for r in rows) else "mask"
     if rows:
+        result["overall"]["coverage_mae_vs_mask_pp"] = float(np.mean([abs(r["pred_cov"] - r["mask_cov"]) for r in rows]))
         result["overall"]["runtime_s_max"] = float(max(r["runtime_s"] for r in rows))
     result["targets"] = {"coverage_mae_pp": 2.0, "class_agreement": 0.90, "runtime_s": 2.0}
     out_json = Path(out_json)
@@ -828,6 +936,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     t.add_argument("--max-steps-per-epoch", type=int, default=None)
     t.add_argument("--workers", type=int, default=0)
     t.add_argument("--no-pretrained", action="store_true")
+    t.add_argument("--amp", default="auto", choices=["auto", "bf16", "fp16", "none"])
+    t.add_argument("--cache-mb", type=float, default=6000.0, help="RAM image cache (only with --workers 0)")
 
     e = sub.add_parser("eval")
     common(e)
@@ -849,7 +959,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         train(a.data, a.out, a.epochs, a.batch, a.crop, a.max_minutes, a.device, a.seed, encoder=a.encoder,
               lr=a.lr, patience=a.patience, crops_per_card=a.crops_per_card,
               max_steps_per_epoch=a.max_steps_per_epoch, num_workers=a.workers, log_path=a.log,
-              pair_spec=ps, pretrained=not a.no_pretrained)
+              pair_spec=ps, pretrained=not a.no_pretrained, amp=a.amp, cache_mb=a.cache_mb)
     elif a.cmd == "eval":
         evaluate(a.data, a.split, a.weights, a.out, a.fig, a.device, ps, a.max_cards)
     else:
