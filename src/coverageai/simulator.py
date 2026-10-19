@@ -4,8 +4,9 @@ Pipeline per segment (first-order, fit to published trends; NOT a validated drif
   1. Derived (flow, application rate, VMD, wind components) from ``derive_fn``.
   2. Hidden mismatch applied: gust factor on wind, canopy interception, nozzle wear.
   3. Log-normal volume spectrum around VMD, 40 equal-ln(d) bins (physics/droplets.py).
-  4. Fall through boom height H with d^2-law evaporation (physics/evaporation.py);
-     displacement x = U t_fall; drift = out-of-range volume + evaporated volume
+  4. Fall through boom height H from nozzle exit velocity v0 with linear-drag relaxation
+     and d^2-law evaporation (physics/drift.py, physics/evaporation.py); lateral
+     displacement x(t_f) relaxes toward U; drift = out-of-range volume + evaporated volume
      (physics/drift.py).
   5. Deposition D = GPA * wear * (1 - drift_frac) * canopy_eta, split by bin.
   6. Boolean-model coverage with spread factor SF ~ U(spread_factor) (physics/coverage.py).
@@ -45,7 +46,8 @@ from coverageai.contracts import (Conditions, Derived, DropletSample, MismatchLe
 from coverageai.physics import coverage as cov_mod
 from coverageai.physics import drift as drift_mod
 from coverageai.physics.droplets import lognormal_volume_bins, sigma_from_span
-from coverageai.physics.evaporation import evaporation_lambda, fall_with_evaporation
+from coverageai.physics.drift import exit_velocity, fall_with_exit_velocity
+from coverageai.physics.evaporation import evaporation_lambda
 
 
 def _default_derive() -> Callable[[Conditions, Setting], Derived]:
@@ -151,15 +153,15 @@ class SpraySimulator:
         return g, eta, ff, vf
 
     # ------------------------------------------------------------ core
-    def _core(self, vmd, gpa, u_cross, u_along, height, temp, rh, eta, sf):
+    def _core(self, vmd, gpa, u_cross, u_along, height, temp, rh, eta, sf, p_psi):
         """Vectorized over N segments. Returns dict of arrays plus per-bin arrays."""
         p = self.p
         thr = float(p["drift_threshold_m"])
         d0, w, dln = lognormal_volume_bins(vmd, self.sigma_ln, self.n_bins)
         lam = evaporation_lambda(temp, rh, p["evaporation_lambda_coeff"])[:, None]
-        d_f, t_fall, alive = fall_with_evaporation(d0, height[:, None], lam)
-        x_c = u_cross[:, None] * t_fall
-        x_a = u_along[:, None] * t_fall
+        v0 = exit_velocity(p_psi, p["exit_velocity_coeff"], p["water_density_kg_m3"])[:, None]
+        d_f, _, alive, x_c, x_a = fall_with_exit_velocity(
+            d0, height[:, None], v0, lam, u_cross[:, None], u_along[:, None])
         inr = drift_mod.in_range_fraction(x_c, thr)
         frac_dep = w[None, :] * inr * alive * (d_f / d0) ** 3     # emitted-volume fraction
         drift_frac = np.clip(1.0 - frac_dep.sum(axis=1), 0.0, 1.0)
@@ -180,7 +182,7 @@ class SpraySimulator:
                 np.array([d.u_cross_ms * hid.gust_mult]),
                 np.array([d.u_along_ms * hid.gust_mult]),
                 np.array([x.boom_height_m]), np.array([x.temp_c]), np.array([x.rh_pct]),
-                np.array([hid.canopy_eta]), np.array([sf]))
+                np.array([hid.canopy_eta]), np.array([sf]), np.array([u.pressure_psi]))
 
     # ------------------------------------------------------------ public API
     def simulate(self, x: Conditions, u: Setting, rng: np.random.Generator,
@@ -219,6 +221,7 @@ class SpraySimulator:
         uc = np.array([d.u_cross_ms for d in ders])
         ua = np.array([d.u_along_ms for d in ders])
         h = np.array([x.boom_height_m for x in xs])
+        pr = np.array([u.pressure_psi for u in us])
         t = np.array([x.temp_c for x in xs])
         rh = np.array([x.rh_pct for x in xs])
         g, eta, ff, vf = self._draw_hidden_batch(n, rng, mismatch)
@@ -228,7 +231,7 @@ class SpraySimulator:
         for a in range(0, n, chunk):
             s = slice(a, min(a + chunk, n))
             r = self._core(vmd[s] * vf[s], gpa[s] * ff[s], uc[s] * g[s], ua[s] * g[s],
-                           h[s], t[s], rh[s], eta[s], sf[s])
+                           h[s], t[s], rh[s], eta[s], sf[s], pr[s])
             for k in keys:
                 out[k][s] = r[k]
         return {"coverage_pct": out["coverage"], "deposition_ul_cm2": out["deposition"],

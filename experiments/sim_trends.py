@@ -71,16 +71,16 @@ def main() -> None:
         ax[0, 1].plot(winds, [mean_of(sim, cond(u), "drift_frac") for u in winds],
                       color=COLORS[name], label=name)
     ax[0, 1].set(xlabel="crosswind speed (m/s)", ylabel="drift fraction",
-                 title="(b) Drift vs wind (H 0.5 m, 15 GPA)", ylim=(0, 1.02))
+                 title="(b) Drift vs wind (H 0.5 m, 15 GPA, 40 psi)", ylim=(0, 1.02))
     ax[0, 1].legend(fontsize=8)
 
     heights = np.linspace(0.30, 0.75, 19)
     for name, vmd in CLASSES.items():
         sim = make_sim(vmd, 15.0)
-        ax[1, 0].plot(heights, [mean_of(sim, cond(1.0, h=h), "drift_frac") for h in heights],
+        ax[1, 0].plot(heights, [mean_of(sim, cond(3.0, h=h), "drift_frac") for h in heights],
                       color=COLORS[name], label=name)
     ax[1, 0].set(xlabel="boom height (m)", ylabel="drift fraction",
-                 title="(c) Drift vs boom height (crosswind 1 m/s, 15 GPA)", ylim=(0, 1.02))
+                 title="(c) Drift vs boom height (crosswind 3 m/s, 15 GPA)", ylim=(0, 1.02))
     ax[1, 0].legend(fontsize=8)
 
     rhs = np.linspace(10, 95, 18)
