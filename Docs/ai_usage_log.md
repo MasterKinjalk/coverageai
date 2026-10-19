@@ -5,3 +5,4 @@ The course permits AI use. Each line records one AI-assisted work session.
 | Date | WP | Model | Output |
 |---|---|---|---|
 | 2026-10-18 | Plan, WP-00 | Claude Opus 5.5 | PLAN.md, contracts, spec.yaml, units, mocks, smoke test |
+| 2026-10-18 | WP-12 | Claude Sonnet | Scenario library (scenarios.py: six presets, AR(1) wind with gusts, random_conditions), plot script, Docs/scenarios.md, tests |
