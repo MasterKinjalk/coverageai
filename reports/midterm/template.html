@@ -6,19 +6,19 @@
 <style>
   :root { --blue:#1f4e9c; --blue-soft:#e8eef8; --ink:#1a1a1a; --grey:#5a5a5a; --rule:#b8c4dc;
           --met:#1b7a3d; --track:#1f4e9c; --risk:#b3261e; --pend:#6b6b6b; }
-  @page { size: Letter; margin: 1.7cm 1.8cm 1.9cm 1.8cm;
+  @page { size: Letter; margin: 1.4cm 1.6cm 1.6cm 1.6cm;
           @bottom-left  { content: "CoverageVision AI \00B7  ABE 598 Midterm Report"; font: 8.5pt "Segoe UI", Arial, sans-serif; color:#444; }
           @bottom-right { content: counter(page) "/" counter(pages); font: 8.5pt "Segoe UI", Arial, sans-serif; color:#444; } }
   * { box-sizing: border-box; }
   html { background:#fff; }
   body { font-family: "Cambria", "Latin Modern Roman", "Georgia", "Times New Roman", serif;
-         font-size: 9.6pt; line-height: 1.24; color: var(--ink); margin: 0 auto; max-width: 17.8cm; padding: 1cm 0; }
+         font-size: 8.9pt; line-height: 1.17; color: var(--ink); margin: 0 auto; max-width: 17.8cm; padding: 1cm 0; }
   h1, h2, h3, .sans { font-family: "Segoe UI", "Calibri", Arial, sans-serif; color: var(--blue); }
   h1 { font-size: 19pt; line-height:1.15; text-align:center; margin: 0 0 4pt; }
   .byline { text-align:center; font-family:"Segoe UI",Arial,sans-serif; font-size:9.5pt; color:var(--grey); margin-bottom: 8pt; }
-  h2 { font-size: 12.3pt; margin: 8pt 0 3pt; break-after: avoid; border-bottom: 0.6pt solid var(--rule); padding-bottom: 1pt; }
+  h2 { font-size: 12.3pt; margin: 7pt 0 3pt; break-after: avoid; border-bottom: 0.6pt solid var(--rule); padding-bottom: 1pt; }
   h3 { font-size: 10.3pt; margin: 6pt 0 2pt; break-after: avoid; }
-  p { margin: 0 0 4pt; text-align: justify; hyphens: auto; }
+  p { margin: 0 0 3pt; text-align: justify; hyphens: auto; }
   .summary { border: 0.8pt solid var(--rule); background: var(--blue-soft); padding: 4pt 8pt; margin: 3pt 0 4pt; }
   .summary p { margin: 0; }
   code, .mono { font-family: "Consolas", "Courier New", monospace; font-size: 8.8pt; }
@@ -31,21 +31,23 @@
   .twoup { display: flex; gap: 8pt; align-items: flex-start; }
   .twoup > div { flex: 1 1 0; min-width: 0; }
   .twoup img { width: 100%; }
-  table { border-collapse: collapse; width: 100%; margin: 2pt 0 5pt; font-size: 8.2pt; line-height: 1.2; break-inside: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 2pt 0 5pt; font-size: 8.1pt; line-height: 1.17; }
+  tr { break-inside: avoid; }
   th { font-family: "Segoe UI", Arial, sans-serif; font-size: 8pt; text-align: left; color: #fff; background: var(--blue); padding: 2pt 4pt; vertical-align: bottom; }
-  td { padding: 1.8pt 4pt; border-bottom: 0.5pt solid var(--rule); vertical-align: top; }
+  td { padding: 1.3pt 4pt; border-bottom: 0.5pt solid var(--rule); vertical-align: top; }
   tr:nth-child(even) td { background: #f6f8fc; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tr.best td { font-weight: 600; }
   table.big td, table.big th { font-size: 8pt; }
+  table.big tr:first-child { break-after: avoid; }
   .st { font-family:"Segoe UI",Arial,sans-serif; font-weight:700; font-size: 8pt; white-space: nowrap; }
-  .st.met { color: var(--met); } .st.track { color: var(--track); } .st.risk { color: var(--risk); } .st.pending { color: var(--pend); }
+  .st.met { color: var(--met); } .st.track { color: var(--track); } .st.risk { color: var(--risk); } .st.missed { color: var(--risk); } .st.pending { color: var(--pend); }
   .pendbox { border: 1pt dashed #8a8a8a; background: #f3f3f3; padding: 5pt 8pt; margin: 3pt 0 6pt; font-size: 9.2pt; color:#333; break-inside: avoid; }
   .pendbox b { font-family:"Segoe UI",Arial,sans-serif; color: #6b6b6b; letter-spacing: .02em; }
   .confirm { background:#fff2b3; padding: 0 2pt; font-family:"Segoe UI",Arial,sans-serif; font-size: 8pt; font-weight:700; color:#7a5a00; }
   ul, ol { margin: 0 0 4pt 0; padding-left: 14pt; } li { margin-bottom: 1pt; text-align: justify; }
   .eq { text-align: center; margin: 3pt 0 5pt; font-size: 10.3pt; }
-  .refs { font-size: 7.4pt; line-height: 1.13; } .refs li { margin-bottom: 1.5pt; text-align: left; }
+  .refs { font-size: 7.1pt; line-height: 1.1; } .refs li { margin-bottom: 1.5pt; text-align: left; }
   .note { font-size: 8.8pt; color: var(--grey); }
   @media print { body { padding: 0; max-width: none; } }
   @media screen { body { padding: 1.2cm 1cm; } }
@@ -66,7 +68,7 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 <h3>2.1 System architecture as built</h3>
 <p>The loop follows the proposal (@fig:arch). Modules exchange frozen, versioned records defined in <code>contracts.py</code> (schema 1.0), so each was built and tested against mocks first. <code>loop.py</code> runs a 40-segment pass under five policies (<code>open</code>, <code>fast</code>, <code>fast_slow</code>, <code>oracle</code>, <code>best_fixed</code>) and logs one row per segment. The code base is {{src_lines}} lines of Python with {{n_tests}} test functions.</p>
 
-<figure>
+<figure class="w85">
 <svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Closed-loop system diagram with module names" style="width:100%;height:auto;font-family:'Segoe UI',Arial,sans-serif">
 <defs>
 <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
@@ -167,25 +169,26 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 {{model_rows}}
 </table>
 <figure>
-<img src="{{fig_model_parity}}" alt="Parity plots of the LightGBM model" style="max-width:66%">
+<img src="{{fig_model_parity}}" alt="Parity plots of the LightGBM model" style="max-width:47%">
 <figcaption><b>Figure #parity.</b> LightGBM versus simulator on held-out rows: four outputs on the random split (top), coverage on the withheld regimes (bottom left three) and coverage MAE by split and model (bottom right; dotted: 3 pp target).</figcaption>
 </figure>
 
 <h3>2.5 Selector and scenarios</h3>
-<p>The selector implements Eq. (2) of the proposal: it scores every catalog candidate with the model, keeps those with <i>C</i>&#770; + <i>b</i> &minus; <i>m</i> &ge; <i>C</i><sub>req</sub>, and picks the one minimizing &lambda;&middot;drift<sub>n</sub> + (1 &minus; &lambda;)&middot;volume<sub>n</sub> (min-max normalized over the feasible set; &lambda; = 0.6). The margin <i>m</i> is the lower half-width of the prediction interval, floored at 1.5 pp. If nothing is feasible it returns the highest-coverage setting and flags the segment. <code>best_fixed</code> is the single setting with the highest success rate over the scenario set, ties broken by lowest drift.</p>
+<p>The selector implements Eq. (2) of the proposal: it scores every catalog candidate with the learned model (<code>SprayModel</code>, Section 2.4), keeps those with <i>C</i>&#770; + <i>b</i> &minus; <i>m</i> &ge; <i>C</i><sub>req</sub>, and picks the one minimizing &lambda;&middot;drift<sub>n</sub> + (1 &minus; &lambda;)&middot;volume<sub>n</sub> (min-max normalized over the feasible set; &lambda; = 0.6). The margin <i>m</i> is the lower half-width of the prediction interval, floored at 1.5 pp. If nothing is feasible it returns the highest-coverage setting and flags the segment. <code>best_fixed</code> is the single setting with the highest success rate over the scenario set, ties broken by lowest drift.</p>
 {{selector_block}}
 <p>The scenario library generates 40-segment passes with AR(1) wind and gust bursts, rotating wind direction, diurnal temperature and humidity trends, and back-and-forth headings (the crosswind changes sign every 10 segments). Six presets each have an agronomic rationale: <code>calm_morning</code> (1.2 m/s base wind, benign reference), <code>gusty_afternoon</code> (4.0 m/s, gust probability 0.12), <code>hot_dry</code> (33 to 38 &deg;C, RH 28% to 16%; hot, dry air speeds evaporation and raises drift potential [13]), <code>crosswind_shift</code> (wind direction rotates 140&deg;), <code>marginal_limits</code> (6.0 m/s mean, near the label limit [14], exercises the infeasible path) and <code>inversion_evening</code> (0.6 m/s, cooling; a limitation test, since inversions are not modeled). The parameters are plausible regime choices, not measured weather statistics. The rationale text was drafted from Emery's specification and awaits his review <span class="confirm">TEAM TO CONFIRM</span>.</p>
 
 
 <h3>2.6 WSP renderer and public data</h3>
 <p>The renderer turns the droplets on a card into an RGB image and an exact mask (76 &times; 26 mm, 600 dpi). Each detectable droplet leaves an area-preserving elliptical stain of diameter SF&middot;<i>d</i>; a vectorized rasterizer replaces <code>cv2.ellipse</code>, which misses 10 to 15% of small stains' area. Degradations (warp applied to the mask too, illumination, blur, noise, JPEG) come in <code>scanner</code> and <code>phone</code> profiles (@fig:wsp). Over 100 undegraded cards at 1% to 80% coverage, mask coverage matches the analytic Boolean value to a mean absolute 0.14 pp (maximum 0.70 pp; test limit 2 pp), and worst-case render time is under 1 s per card.</p>
-<p>The Simões et al. record <a href="https://doi.org/10.5281/zenodo.13995950">10.5281/zenodo.13995950</a> [7] provides {{simoes_n}} synthetic cards with polygon labels (CC BY 4.0; {{simoes_droplets}} droplets; coverage {{simoes_cov_min}}% to {{simoes_cov_max}}%, mean {{simoes_cov_mean}}%). <code>vision/real_data.py</code> rasterizes the polygons and tiles cards; pixel size is inferred from card width because no dpi is published. The two annotated real cards (2,754 droplets) are in a later version whose files are restricted (D9). Zenodo access has been requested and an email to the authors is drafted but not sent <span class="confirm">TEAM TO CONFIRM request status</span>; until access is granted the real-card criterion is untested.</p>
-<figure style="width:86%;margin-left:auto;margin-right:auto">
-<div class="twoup">
+<p>The Simões et al. record <a href="https://doi.org/10.5281/zenodo.13995950">10.5281/zenodo.13995950</a> [7] provides {{simoes_n}} synthetic cards with polygon labels (CC BY 4.0; {{simoes_droplets}} droplets; coverage {{simoes_cov_min}}% to {{simoes_cov_max}}%, mean {{simoes_cov_mean}}%). <code>vision/real_data.py</code> rasterizes the polygons and tiles cards; pixel size is inferred from card width because no dpi is published. The two annotated real cards (2,754 droplets) are in a later version whose files are restricted (D9). Access must be requested through Zenodo <span class="confirm">TEAM TO CONFIRM once sent</span>; an email to the authors is drafted. Until access is granted the real-card criterion is untested.</p>
+<figure>
+<div class="twoup" style="align-items:center">
   <div style="flex:1.5"><img src="{{fig_wsp_examples}}" alt="Synthetic WSP cards rendered by the team"></div>
   <div style="flex:1"><img src="{{fig_b0_parity}}" alt="B0 coverage parity plot"></div>
+  <div style="flex:1"><img src="{{fig_b1_parity_left}}" alt="B1 coverage parity plot"></div>
 </div>
-<figcaption><b>Figure #wsp.</b> Left: synthetic cards from the team's renderer, 5% to 76% true coverage, scanner and phone profiles. Right: classical verifier B0 coverage versus true coverage on the held-out synthetic test split (shaded: &plusmn;2 pp).</figcaption>
+<figcaption><b>Figure #wsp.</b> Left: synthetic cards from the team's renderer, 5% to 76% true coverage, scanner and phone profiles. Middle: classical verifier B0 coverage versus true coverage on the held-out synthetic test split (shaded: &plusmn;2 pp). Right: B1 (6-epoch CPU checkpoint, Section 2.7) on the same split; lines mark the 15% and 30% class limits.</figcaption>
 </figure>
 
 <h3>2.7 Post-spray verification</h3>
@@ -196,8 +199,14 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 <h3>2.8 Closed-loop experiments</h3>
 {{closed_loop_block}}
 
+<h3>2.9 Demonstration</h3>
+<div class="twoup" style="align-items:center">
+<div style="flex:0.6"><figure style="margin:0"><img src="{{fig_demo_live_top}}" alt="Streamlit demo, Live pass tab"><figcaption><b>Figure #demo.</b> Demo app, Live pass tab (top of the page): scenario <code>gusty_afternoon</code>, high hidden mismatch, fast policy, segment 15 of 40, with chosen setting, selector reasoning, rendered card and the four coverage values.</figcaption></figure></div>
+<div style="flex:1.35"><p>The Streamlit app <code>app/main.py</code> runs a 40-segment pass segment by segment and shows every decision: the conditions, the chosen setting and why (feasible candidates among the 547, top-5 ranking), the rendered card with the verifier's mask, and the predicted, corrected, measured and true coverage. It has three tabs. <b>Live pass</b> steps through one pass under a chosen preset, mismatch level, policy, model and verifier. <b>Policy comparison</b> runs chosen policies (default open, fast and oracle) on the same seed and hidden mismatch. <b>Nozzle explorer</b> shows catalog-derived quantities and the nominal simulator's response for a chosen nozzle.</p></div>
+</div>
+
 <h2>3 Status Against the Success Criteria</h2>
-<p>@tab:crit mirrors Table 1 of the proposal. <span class="st met">met</span>: target satisfied on the evaluation available now (inside our simulator only); <span class="st track">on track</span>: partial evidence; <span class="st risk">at risk</span>: blocked by an outside dependency; <span class="st pending">pending</span>: no result yet.</p>
+<p>@tab:crit mirrors Table 1 of the proposal. <span class="st met">met</span>: target satisfied on the evaluation available now (inside our simulator only); <span class="st missed">missed</span>: evaluated and the target was not reached (causes in Section 2.8); <span class="st risk">at risk</span>: blocked by an outside dependency; <span class="st pending">pending</span>: no result yet. Simulator and model are unchanged since the first draft.</p>
 <div class="caption"><b>Table #crit.</b> Success criteria (proposal Table 1) and current status.</div>
 <table class="big">
 <tr><th style="width:12%">Criterion</th><th style="width:30%">Target</th><th style="width:45%">Current measured</th><th style="width:13%">Status</th></tr>
@@ -208,14 +217,16 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 <h3>4.1 What the results show and do not show</h3>
 <ul>
 <li><b>The model works, but the 3 pp target sits close to a floor set by the simulator.</b> Coverage depends on a per-row random spread factor, so no model can beat an MAE of {{noise_floor}} pp against sampled outcomes. LightGBM's {{lgb_rand_mae}} pp is {{gap_to_floor}} pp above that floor; against the noise-free expectation its MAE is {{lgb_exp_mae}} pp (ridge: {{ridge_exp_mae}} pp). Ridge's miss ({{ridge_rand_mae}} pp) reflects real nonlinearity, but a 3 pp target leaves almost no slack, so the final report will also give error against expected coverage.</li>
-<li><b>Withholding regimes barely changes coverage error but does change drift and shift.</b> Coverage MAE stays between {{grp_min}} and {{grp_max}} pp because coverage is governed by volume and droplet size, which training data span. Shift MAE grows from {{shift_rand}} mm to {{shift_u5}} mm (wind above 5 m/s withheld) and {{shift_3d}} mm (3D withheld); drift MAE from {{drift_rand}} to {{drift_u5}} (wind above 5 m/s), so drift estimates are least reliable at high wind, where they matter most. All regimes lie inside one smooth simulator, so this says nothing about real sprayers.</li>
-<li><b>Sensitivity sweeps pass</b> ({{sens_pass}} of {{sens_total}}): coverage falls as speed rises, drift rises with wind and boom height and falls with coarser class. They check direction, not magnitude.</li>
+<li><b>Withholding regimes barely changes coverage error but does change drift and shift.</b> Coverage MAE stays between {{grp_min}} and {{grp_max}} pp because coverage is governed by volume and droplet size, which training data span. Shift MAE grows from {{shift_rand}} mm to {{shift_u5}} mm (wind above 5 m/s withheld) and {{shift_3d}} mm (3D withheld); drift MAE from {{drift_rand}} to {{drift_u5}} (wind above 5 m/s), so drift estimates are least reliable at high wind, where they matter most.</li>
+<li><b>Sensitivity sweeps pass</b> ({{sens_pass}} of {{sens_total}}); they check direction, not magnitude.</li>
 <li><b>B0 is accurate mid-range and degrades at high coverage.</b> {{b0_analysis}}</li>
+<li><b>The interval-based margin is what makes the selector reliable.</b> With the simulator as the model and only the 1.5 pp margin floor, the selector meets the requirement in {{sel_oracle_success}}% of scenarios; with the learned model and its conformal interval it does in {{sel_spray_success}}%. The per-card spread factor is noise no model can predict, so the margin must come from a calibrated interval.</li>
+<li><b>The closed-loop volume criterion compares against an oracle with information no deployable controller has.</b> The oracle sees each card's spread factor and needs no margin, which alone costs +12.2% volume with no mismatch; only about 3 of the 15.2 points are due to mismatch correction. A fairer oracle, one that knows the mismatch but not the per-card noise, is planned for M4.</li>
 <li><b>Evaluation is circular.</b> Simulator, renderer, model and verifier share assumptions (spread-factor range, Boolean overlap, 50 &micro;m cutoff), so good synthetic scores show consistency, not farm performance. The hidden mismatch, oracle policy and perfect-measurement ablation separate the loop's benefit from this circularity.</li>
 </ul>
 
 <h3>4.2 Key decisions and why</h3>
-<p>The decision log (<code>Docs/decisions.md</code>) holds ten entries, each resolving an ambiguity that would have split the modules. D1 and D2 fix conventions (wind direction is where the air moves toward; four distinctly named outputs, because "D" meant drift in the proposal and deposition in the specification). D3 to D5 record catalog gaps. D6 limits the selector to nozzle, size and pressure, deferring speed as a control variable. D7 and D8 record the compressed schedule and the use of system Python 3.14, since the machine's application-control policy blocks uv-managed interpreters. D9 reports the real-card criterion as untested because the annotated cards are restricted, rather than estimating it.</p>
+<p>The decision log (<code>Docs/decisions.md</code>) holds ten entries, each resolving an ambiguity that would have split the modules. D1 and D2 fix conventions (wind direction is where the air moves toward; four distinctly named outputs, because "D" meant drift in the proposal and deposition in the specification). D3 to D5 record catalog gaps. D6 limits the selector to nozzle, size and pressure, deferring speed as a control variable. D7 and D8 record the compressed schedule and the use of system Python 3.14. D9 reports the real-card criterion as untested because the annotated cards are restricted, rather than estimating it.</p>
 <p><b>D10, exit velocity.</b> With the first-order displacement <i>x</i> = <i>U</i>&middot;<i>H</i>/<i>V</i><sub>t</sub> and a 0.5 m threshold, a medium droplet (215 &micro;m, <i>V</i><sub>t</sub> = 0.78 m/s) needs 0.64 s to fall 0.5 m and moves 1.3 m in a 2 m/s crosswind, so the model predicted 87% drift of medium-droplet volume, which is implausible at this height. Real droplets leave the nozzle at about 14 m/s and cross most of the height in tens of milliseconds before settling. Adding exit velocity with linear-drag relaxation gives 30% drift for fine, 8% for medium and 1% for coarse sprays at the same conditions. We kept the 0.5 m threshold instead of retuning it, so the fix changes the physics, not a free parameter.</p>
 
 <h3>4.3 Limitations</h3>
@@ -228,9 +239,9 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 
 <h2>5 Project Management and Teamwork</h2>
 <h3>5.1 Schedule, tools and process</h3>
-<p>M1 and M2 passed without committed code, so the freeze, baselines and first integration were compressed into three gates before the midterm; M4 and M5 are unchanged. Tools follow the proposal: a private GitHub repository with review before every merge, a Microsoft Teams channel, a decision log (10 entries) and an AI-use log ({{ai_log_rows}} entries); tests and the end-to-end smoke test must pass before a merge.</p>
+<p>M1 and M2 passed without committed code, so the freeze, baselines and first integration were planned as three gates (Oct 18 to 20) before the midterm; in practice all modules were built and merged on Oct 18. Tools follow the proposal: a private GitHub repository with review before every merge, a Microsoft Teams channel, a decision log (10 entries) and an AI-use log ({{ai_log_rows}} entries); tests and the end-to-end smoke test must pass before a merge.</p>
 <p><b>AI-assisted workflow.</b> One orchestrator session (Claude Opus 5.5) wrote the execution plan, froze the contracts and <code>spec.yaml</code>, and reviewed each work package. Implementation agents (Claude Sonnet models) each took one package in a separate git worktree against the frozen contracts, added tests and logged the session; packages ran in parallel and merged in dependency order. The accountable member reviews each module; contracts change only through the orchestrator; Kinjalk runs the orchestration and merges (@tab:contrib).</p>
-<p><b>Schedule.</b> M1 (specification freeze, Oct 2) was met on Oct 18 at gate R0, 16 days late: contracts, <code>spec.yaml</code>, mocks and smoke test frozen. M2 (baselines, Oct 16) was met at gates R1 and R2 on Oct 19 to 20, 3 to 4 days late: simulator, dataset, model, scenarios, renderer and B0, with results in this report. M3 (Oct 30: B1 on GPU, selector re-evaluation with the integrated model), M4 (Nov 20: closed-loop experiments, real-card evaluation if access is granted) and M5 (Dec 9: final report, demonstration, presentation) are unchanged.</p>
+<p><b>Schedule.</b> All Wave 1 to 3 modules (specification, catalog, simulator, model, selector, scenarios, renderer, B0, B1 code, feedback, harness, integration, experiments and demo) were built and merged on Oct 18. M1 (specification freeze, Oct 2) was met 16 days late, with contracts, <code>spec.yaml</code>, mocks and smoke test frozen. M2 (baselines, Oct 16) was met 2 days late, with simulator, dataset, model, scenarios, renderer and B0. The M3 work that remains (Oct 30) is B1 training on a GPU, real-card evaluation if access is granted, and the slow-loop redesign; the selector re-evaluation with the integrated model, also planned for M3, is already done (Section 2.5). M4 (Nov 20) and M5 (Dec 9: final report, demonstration, presentation) are unchanged, with the fairer-oracle comparison added to M4.</p>
 
 <h3>5.2 Individual contributions</h3>
 <p>"Work completed" means built, tested and merged unless stated. Modules implemented by AI agents are owned and reviewed by the named member; each member's own authoring and review is stated only where project documents show it.</p>
@@ -240,29 +251,29 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 <tr><td><b>Emery Brewer</b> (remote)</td>
 <td>System specification (parameter definitions, physics relationships, assumptions); scenario rationale review; selector ownership; domain validation.</td>
 <td>Authored <i>CoverageAIDraftParameters.pdf</i> (variables, units, ranges, physics relationships, validation approach) and the earlier simulations in <i>ProjectDeliveryProposal.pdf</i>; these define <code>spec.yaml</code> and the physics the simulator encodes. The catalog, scenario library with rationale text, and selector were implemented by AI agents for his ownership and are merged. <span class="confirm">TEAM TO CONFIRM</span> his review of catalog values, preset rationale and selector, and any further contributions.</td>
-<td>Review selector results with the integrated model (M3, Oct 30); pattern-overlap, spray-angle and speed-control relationships (M4, Nov 20); domain-validation section (M5, Dec 9).</td></tr>
+<td>Review the selector evaluation and the closed-loop results (M3, Oct 30); pattern-overlap, spray-angle and speed-control relationships (M4, Nov 20); domain-validation section (M5, Dec 9).</td></tr>
 <tr><td><b>Junjie Ao</b></td>
 <td>Simulator and dataset pipeline; predictive model ownership.</td>
 <td>The simulator (<code>physics/</code>, <code>simulator.py</code>, with the D10 fix), dataset v1 (50,000 rows) and predictive model (LightGBM with interval, ridge and forest baselines, grouped-split evaluation) are built, tested and merged; AI agents implemented them for his ownership. <span class="confirm">TEAM TO CONFIRM</span> his own authoring, review and decisions on these modules.</td>
-<td>Model v2 with error analysis and refit on loop records (M3, Oct 30); model in the full loop (M4, Nov 20); evaluation of the spray-angle extension (M5).</td></tr>
+<td>Model v2 with error analysis, and interval recalibration for the slow-loop redesign (M3, Oct 30); model in the full loop (M4, Nov 20); evaluation of the spray-angle extension (M5).</td></tr>
 <tr><td><b>Kinjalk Parth</b></td>
 <td>WSP renderer; verification (B0, B1); feedback and loop harness; integration and experiments; orchestration of AI-assisted implementation.</td>
-<td>Execution plan, contracts, <code>spec.yaml</code>, decision log, mocks and smoke test; renderer (0.14 pp mean agreement with the analytic model); B0 (1.44 pp MAE on 180 synthetic test cards); Simões data loader; feedback module and loop harness with five policies; review and merge of all work packages; this report's draft. B1 and the closed-loop experiments are in progress.</td>
-<td>B1 trained on GPU and evaluated (M3, Oct 30); integration, closed-loop experiments and demo app (M4, Nov 20); real-card evaluation if granted; final presentation (M5).</td></tr>
+<td>Execution plan, contracts, <code>spec.yaml</code>, decision log, mocks, smoke test; renderer (0.14 pp mean agreement with the analytic model); B0 (1.44 pp MAE, 180 synthetic test cards); Simões loader; feedback module and loop harness (five policies); selector evaluation with the learned model ({{sel_spray_success}}% requirement-met); integration (<code>e2e --real</code>); closed-loop grid and ablations; Streamlit demo app (orchestrated); B1 code with partial 6-epoch CPU training (0.42 pp MAE); review and merge of all work packages; this report.</td>
+<td>B1 trained on GPU and re-timed (M3, Oct 30); slow-loop redesign (M3); fairer oracle and extended closed-loop grid with B1 (M4, Nov 20); real-card evaluation if granted; final presentation (M5).</td></tr>
 </table>
-<p><b>Risks update.</b> The proposal's risks stand: sim-to-real transfer (unmeasured until real cards arrive), circular evaluation (hidden mismatch, oracle, perfect-measurement ablation) and integration slip (realized once, as the M1 and M2 slip). New: AI-written code that teammates must understand (owner review; each member presents their own module) and a 3 pp model target near the noise floor.</p>
+<p><b>Risks update.</b> The proposal's risks stand: sim-to-real transfer (unmeasured until real cards arrive), circular evaluation (hidden mismatch, oracle, perfect-measurement ablation) and integration slip (realized as the M1 and M2 slip). New: AI-written code that teammates must understand (owner review; each member presents their own module), a 3 pp model target near the noise floor, and the missed closed-loop criterion, addressed in M3 and M4 (Section 6).</p>
 
 <h2>6 Next Steps to M4 and M5</h2>
 <ul>
-<li><b>By Oct 30 (M3).</b> Train the U-Net B1 on a GPU (NCSA H100 or Colab; CPU fallback); rerun the selector evaluation with the integrated model and catalog; obtain the restricted real cards and evaluate B0 and B1 on real tiles, or on our own phone photos of WSP.</li>
-<li><b>By Nov 20 (M4).</b> Run the full closed-loop grid (five policies, four mismatch levels, six presets, 20 seeds, 95% CIs) with B1 and B0, ablate &alpha;, warm-up, bias scope and verifier; finish the demo app. Add spray angle and pattern overlap (Emery's relationships) so same-class families differ; make travel speed a control variable.</li>
+<li><b>By Oct 30 (M3).</b> Train the U-Net B1 on a GPU (NCSA H100 or <code>notebooks/train_unet_gpu.ipynb</code> on Colab) and re-time it on all 180 test cards. Redesign the slow loop: a bias-only or shrinkage update, recalibration of the prediction interval after each refit, and record weight 1. Obtain the restricted real cards <span class="confirm">TEAM TO CONFIRM</span> and evaluate B0 and B1 on real tiles, or on our own phone photos of WSP.</li>
+<li><b>By Nov 20 (M4).</b> Add a fairer oracle that knows the mismatch but not the per-card spread factor, and rerun the closed-loop grid against both oracles with B1 and B0 as verifiers, all six presets and the redesigned slow loop (20 seeds, 95% CIs). Add spray angle and pattern overlap (Emery's relationships) so same-class families differ; make travel speed a control variable; polish the demo app.</li>
 <li><b>By Dec 9 (M5).</b> Hardening, final report with every criterion in @tab:crit measured, domain-validation section, and a presentation in which each member presents their own module.</li>
 </ul>
 
 <h2>7 AI-Use Disclosure</h2>
-<p>The course permits AI use, and this project uses it heavily. The execution plan, contracts, simulator, catalog transcription, model, selector, scenario library, renderer, classical verifier, feedback module, loop harness, tests and the draft of this report were produced by Claude models (Claude Opus 5.5 as orchestrator and reviewer, Claude Sonnet models as implementation agents) under the team's direction; {{ai_log_rows}} sessions are recorded in <code>Docs/ai_usage_log.md</code>. Team members set the scope, resolve ambiguities in the decision log, review the modules they own, and are responsible for every claim here. Numbers are read from results files at build time; where a result does not exist the report says so. Each member must verify the statements marked <span class="confirm">TEAM TO CONFIRM</span> before submission.</p>
+<p>The course permits AI use, and this project uses it heavily. The execution plan, contracts, simulator, catalog transcription, model, selector, scenario library, renderer, classical and U-Net verifiers, feedback module, loop harness, integration, closed-loop experiments, demo app, tests and this report were produced by Claude models (Claude Opus 5.5 as orchestrator and reviewer, Claude Sonnet models as implementation agents) under the team's direction; {{ai_log_rows}} sessions are recorded in <code>Docs/ai_usage_log.md</code>. Team members set the scope, resolve ambiguities in the decision log, review the modules they own, and are responsible for every claim here. Numbers are read from results files at build time, except the end-to-end run time and the idle-CPU timing of B1, which the orchestrating session measured. Each member must verify the statements marked <span class="confirm">TEAM TO CONFIRM</span> before submission.</p>
 
-<h2>References</h2>
+<h2>References <span class="confirm">TEAM TO CONFIRM references [9]&ndash;[11] and [15]&ndash;[17]</span></h2>
 <ol class="refs">
 <li>A. S. Felsot, J. B. Unsworth, J. B. H. J. Linders, G. Roberts, D. Rautman, C. Harris, and E. Carazo. Agrochemical spray drift; assessment and mitigation&mdash;A review. <i>J. Environ. Sci. Health, Part B</i>, 46(1):1&ndash;23, 2011.</li>
 <li>H. Zhu, M. Salyani, and R. D. Fox. A portable scanning system for evaluation of spray deposit distribution. <i>Computers and Electronics in Agriculture</i>, 76:38&ndash;43, 2011. doi:10.1016/j.compag.2011.01.003.</li>
