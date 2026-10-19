@@ -13,3 +13,4 @@ The course permits AI use. Each line records one AI-assisted work session.
 | 2026-10-18 | WP-02 | Claude Sonnet 5.5 | physics/ (droplets, evaporation, drift, coverage), simulator.py (SpraySimulator, begin_pass, simulate_batch), tests/test_simulator.py, experiments/sim_trends.py + figure |
 | 2026-10-18 | WP-03 | Claude Sonnet | vision/render.py synthetic WSP renderer (vectorized rasterizer, scanner/phone degradations), stratified dataset CLI, tests/test_render.py, example figure |
 | 2026-10-18 | WP-02b | Claude Sonnet 5.5 | Exit-velocity + linear-drag relaxation in physics/drift.py (decision D10), anchor tests, refreshed sim_trends.png |
+| 2026-10-18 | WP-10 | Claude Sonnet | Dataset generator (experiments/make_dataset.py, results/dataset_v1.md), model/features.py, model/predictor.py (SprayModel LightGBM + CQR interval, ridge/RF baselines), experiments/train_eval_model.py, results/model_v1.json, parity and sensitivity figures, tests/test_model.py |
