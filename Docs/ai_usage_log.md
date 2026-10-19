@@ -12,3 +12,4 @@ The course permits AI use. Each line records one AI-assisted work session.
 | 2026-10-18 | WP-05 | Claude Sonnet 5.5 | Zenodo investigation of the Simoes 2025 dataset, `vision/real_data.py` loader (download, YOLOv8-polygon rasterization, tiling, summary CLI), tests, example figure, decision D9, draft email to authors |
 | 2026-10-18 | WP-02 | Claude Sonnet 5.5 | physics/ (droplets, evaporation, drift, coverage), simulator.py (SpraySimulator, begin_pass, simulate_batch), tests/test_simulator.py, experiments/sim_trends.py + figure |
 | 2026-10-18 | WP-03 | Claude Sonnet | vision/render.py synthetic WSP renderer (vectorized rasterizer, scanner/phone degradations), stratified dataset CLI, tests/test_render.py, example figure |
+| 2026-10-18 | WP-02b | Claude Sonnet 5.5 | Exit-velocity + linear-drag relaxation in physics/drift.py (decision D10), anchor tests, refreshed sim_trends.png |
