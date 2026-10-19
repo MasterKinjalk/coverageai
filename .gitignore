@@ -10,3 +10,6 @@ results/runs/
 *.egg-info/
 .ipynb_checkpoints/
 .claude/
+data/datasets/
+models/*.joblib
+models/*.pkl

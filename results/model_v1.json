@@ -1,0 +1,549 @@
+{
+  "dataset": {
+    "path": "data/datasets/v1.parquet",
+    "rows": 50000
+  },
+  "splits": {
+    "random": {
+      "n_train": 39986,
+      "n_test": 10014,
+      "models": {
+        "ridge": {
+          "coverage_pct": {
+            "mae": 3.319259698581466,
+            "rmse": 4.405060853059818,
+            "mae_vs_expected": 1.817141475768318
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.03272009109032186,
+            "rmse": 0.057409017511669
+          },
+          "drift_frac": {
+            "mae": 0.024483114300560684,
+            "rmse": 0.03953674256998981
+          },
+          "displacement_mm": {
+            "mae": 14.968709240190712,
+            "rmse": 22.07606445285008
+          },
+          "fit_s": 0.18566369998734444
+        },
+        "rf": {
+          "coverage_pct": {
+            "mae": 3.2340570217562297,
+            "rmse": 4.276967575966456,
+            "mae_vs_expected": 1.4189889039969403
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.011611810337910575,
+            "rmse": 0.025843603378355107
+          },
+          "drift_frac": {
+            "mae": 0.00972549789256209,
+            "rmse": 0.018657275547785852
+          },
+          "displacement_mm": {
+            "mae": 4.170373575159626,
+            "rmse": 6.978350757139878
+          },
+          "fit_s": 3.7432391000329517
+        },
+        "lightgbm": {
+          "coverage_pct": {
+            "mae": 2.8444100220235615,
+            "rmse": 3.797525785664233,
+            "mae_vs_expected": 0.6425054576288374
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.0035152766546289764,
+            "rmse": 0.006553651128615028
+          },
+          "drift_frac": {
+            "mae": 0.0030009900734061,
+            "rmse": 0.005262589105760624
+          },
+          "displacement_mm": {
+            "mae": 3.4142604957240144,
+            "rmse": 5.210750510140052
+          },
+          "fit_s": 3.4286029000068083,
+          "interval": {
+            "coverage_of_80pct_band": 0.8000798881565808,
+            "frac_below": 0.097563411224286,
+            "frac_above": 0.10235670061913321,
+            "mean_width_pp": 9.034850961684988
+          }
+        }
+      }
+    },
+    "U_gt_5": {
+      "n_train": 35715,
+      "n_test": 14285,
+      "models": {
+        "ridge": {
+          "coverage_pct": {
+            "mae": 3.410784464062208,
+            "rmse": 4.463893125372132,
+            "mae_vs_expected": 1.968095108169706
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.052690043695019645,
+            "rmse": 0.09993037282530584
+          },
+          "drift_frac": {
+            "mae": 0.039394935321270745,
+            "rmse": 0.0629627917852689
+          },
+          "displacement_mm": {
+            "mae": 23.96332072774214,
+            "rmse": 33.60793172043086
+          },
+          "fit_s": 0.035611100029200315
+        },
+        "rf": {
+          "coverage_pct": {
+            "mae": 3.3811930844416,
+            "rmse": 4.481286700753137,
+            "mae_vs_expected": 1.7393631265358884
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.0200834393840722,
+            "rmse": 0.03714266904392863
+          },
+          "drift_frac": {
+            "mae": 0.01562029175296782,
+            "rmse": 0.02413525313575377
+          },
+          "displacement_mm": {
+            "mae": 12.595597129583151,
+            "rmse": 19.492179887855098
+          },
+          "fit_s": 2.365967899968382
+        },
+        "lightgbm": {
+          "coverage_pct": {
+            "mae": 2.827140051204541,
+            "rmse": 3.842840740880948,
+            "mae_vs_expected": 0.8437622833937737
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.005977911642680709,
+            "rmse": 0.011179206818038972
+          },
+          "drift_frac": {
+            "mae": 0.005096007210886158,
+            "rmse": 0.008902420760091017
+          },
+          "displacement_mm": {
+            "mae": 8.341990427857084,
+            "rmse": 13.162453487263944
+          },
+          "fit_s": 3.264987599977758,
+          "interval": {
+            "coverage_of_80pct_band": 0.807630381519076,
+            "frac_below": 0.0807840392019601,
+            "frac_above": 0.11158557927896395,
+            "mean_width_pp": 8.892334084363732
+          }
+        }
+      }
+    },
+    "family_3D": {
+      "n_train": 35975,
+      "n_test": 14025,
+      "models": {
+        "ridge": {
+          "coverage_pct": {
+            "mae": 3.420978097169789,
+            "rmse": 4.582315612854212,
+            "mae_vs_expected": 1.9180668826727658
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.03197464345651579,
+            "rmse": 0.053441080006668626
+          },
+          "drift_frac": {
+            "mae": 0.03135502648649171,
+            "rmse": 0.046223884634604445
+          },
+          "displacement_mm": {
+            "mae": 18.776311830553446,
+            "rmse": 26.892916964926712
+          },
+          "fit_s": 0.029996299999766052
+        },
+        "rf": {
+          "coverage_pct": {
+            "mae": 3.570122475754843,
+            "rmse": 4.746160885350447,
+            "mae_vs_expected": 1.9629742200521587
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.021257839064837608,
+            "rmse": 0.03721918677461926
+          },
+          "drift_frac": {
+            "mae": 0.019309962851190746,
+            "rmse": 0.028824301960393407
+          },
+          "displacement_mm": {
+            "mae": 12.650473556531281,
+            "rmse": 19.0785314633807
+          },
+          "fit_s": 2.5871933000162244
+        },
+        "lightgbm": {
+          "coverage_pct": {
+            "mae": 2.9788631478566017,
+            "rmse": 3.9701394616932184,
+            "mae_vs_expected": 0.8963021668663652
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.008257510201742263,
+            "rmse": 0.016703897798891056
+          },
+          "drift_frac": {
+            "mae": 0.007171549272716981,
+            "rmse": 0.012208931524606772
+          },
+          "displacement_mm": {
+            "mae": 12.182881471111163,
+            "rmse": 18.63631661651431
+          },
+          "fit_s": 2.7964600999839604,
+          "interval": {
+            "coverage_of_80pct_band": 0.7705525846702317,
+            "frac_below": 0.09005347593582888,
+            "frac_above": 0.1393939393939394,
+            "mean_width_pp": 9.044629489066851
+          }
+        }
+      }
+    },
+    "hot_dry": {
+      "n_train": 48127,
+      "n_test": 1873,
+      "models": {
+        "ridge": {
+          "coverage_pct": {
+            "mae": 3.1634782170370106,
+            "rmse": 4.147394962114301,
+            "mae_vs_expected": 1.649036422081715
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.02942102129194033,
+            "rmse": 0.05249886049535321
+          },
+          "drift_frac": {
+            "mae": 0.023608848128211752,
+            "rmse": 0.036768409029882515
+          },
+          "displacement_mm": {
+            "mae": 15.513732557805486,
+            "rmse": 22.912627943033414
+          },
+          "fit_s": 0.037500200036447495
+        },
+        "rf": {
+          "coverage_pct": {
+            "mae": 3.1746460268234333,
+            "rmse": 4.217805670899498,
+            "mae_vs_expected": 1.3505127354004776
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.011234213708547634,
+            "rmse": 0.0282994145634739
+          },
+          "drift_frac": {
+            "mae": 0.009929119839074662,
+            "rmse": 0.022542647563363268
+          },
+          "displacement_mm": {
+            "mae": 4.471457157923651,
+            "rmse": 7.919597618487624
+          },
+          "fit_s": 3.9253317999537103
+        },
+        "lightgbm": {
+          "coverage_pct": {
+            "mae": 2.798084500180358,
+            "rmse": 3.769074180153539,
+            "mae_vs_expected": 0.6719609965962527
+          },
+          "deposition_ul_cm2": {
+            "mae": 0.0036960840522579294,
+            "rmse": 0.007018664034619307
+          },
+          "drift_frac": {
+            "mae": 0.0034086658930105283,
+            "rmse": 0.007121011787124578
+          },
+          "displacement_mm": {
+            "mae": 3.5908663723404044,
+            "rmse": 5.5947582641518006
+          },
+          "fit_s": 2.301243700028863,
+          "interval": {
+            "coverage_of_80pct_band": 0.806727175654031,
+            "frac_below": 0.09610250934329952,
+            "frac_above": 0.09717031500266951,
+            "mean_width_pp": 8.742200118444206
+          }
+        }
+      }
+    }
+  },
+  "coverage_noise_floor": {
+    "irreducible_mae_expected_vs_sampled": 2.7565044890381514,
+    "note": "coverage depends on a per-row random spread factor; no model can beat this MAE against sampled outcomes. mae_vs_expected compares predictions with the noise-free mean."
+  },
+  "random_split_by_regime": {
+    "U_gt_5": {
+      "n_test": 2824,
+      "ridge": {
+        "coverage_pct": {
+          "mae": 3.1947195549856637,
+          "rmse": 4.242352929338356
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.03557862064662463,
+          "rmse": 0.06516694253732708
+        },
+        "drift_frac": {
+          "mae": 0.027659492943320176,
+          "rmse": 0.04321356505139873
+        },
+        "displacement_mm": {
+          "mae": 18.31911601183724,
+          "rmse": 26.624902965187445
+        }
+      },
+      "rf": {
+        "coverage_pct": {
+          "mae": 3.273593468652557,
+          "rmse": 4.414308715629287
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.012774414165415702,
+          "rmse": 0.0285754772413906
+        },
+        "drift_frac": {
+          "mae": 0.010214338283819195,
+          "rmse": 0.018133263012338034
+        },
+        "displacement_mm": {
+          "mae": 4.560373995949754,
+          "rmse": 7.519414088424914
+        }
+      },
+      "lightgbm": {
+        "coverage_pct": {
+          "mae": 2.728054949957256,
+          "rmse": 3.6850248330057243
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.004109757151881924,
+          "rmse": 0.007312650007059019
+        },
+        "drift_frac": {
+          "mae": 0.003433612902866154,
+          "rmse": 0.005274202653979674
+        },
+        "displacement_mm": {
+          "mae": 3.8519421021578952,
+          "rmse": 5.541834710862139
+        }
+      }
+    },
+    "family_3D": {
+      "n_test": 2839,
+      "ridge": {
+        "coverage_pct": {
+          "mae": 3.365214410678153,
+          "rmse": 4.481235399391442
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.029364745202457597,
+          "rmse": 0.0491766287161949
+        },
+        "drift_frac": {
+          "mae": 0.02652661703238198,
+          "rmse": 0.04084284132200598
+        },
+        "displacement_mm": {
+          "mae": 16.575612959760882,
+          "rmse": 24.211561162114393
+        }
+      },
+      "rf": {
+        "coverage_pct": {
+          "mae": 3.4090200756273767,
+          "rmse": 4.421539846232578
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.013637742712233177,
+          "rmse": 0.026790616365847685
+        },
+        "drift_frac": {
+          "mae": 0.012292601814569449,
+          "rmse": 0.018753949728536078
+        },
+        "displacement_mm": {
+          "mae": 4.867405294470826,
+          "rmse": 7.246564328959613
+        }
+      },
+      "lightgbm": {
+        "coverage_pct": {
+          "mae": 2.954591290385188,
+          "rmse": 3.8496648426508817
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.00416972116847547,
+          "rmse": 0.00714094690619496
+        },
+        "drift_frac": {
+          "mae": 0.003778628256733119,
+          "rmse": 0.00538337344750211
+        },
+        "displacement_mm": {
+          "mae": 4.178787710887791,
+          "rmse": 5.98366224637611
+        }
+      }
+    },
+    "hot_dry": {
+      "n_test": 370,
+      "ridge": {
+        "coverage_pct": {
+          "mae": 3.229074514292135,
+          "rmse": 4.275395653621418
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.030754124668430697,
+          "rmse": 0.05027525205314367
+        },
+        "drift_frac": {
+          "mae": 0.02269724818360253,
+          "rmse": 0.03233413303147281
+        },
+        "displacement_mm": {
+          "mae": 15.529753985181172,
+          "rmse": 21.77412525354014
+        }
+      },
+      "rf": {
+        "coverage_pct": {
+          "mae": 3.3485664590878694,
+          "rmse": 4.4410383823229695
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.01150036641340392,
+          "rmse": 0.025505284146238538
+        },
+        "drift_frac": {
+          "mae": 0.009224810969028803,
+          "rmse": 0.017850127127265907
+        },
+        "displacement_mm": {
+          "mae": 4.617201470377454,
+          "rmse": 7.098703385516901
+        }
+      },
+      "lightgbm": {
+        "coverage_pct": {
+          "mae": 2.968568279023474,
+          "rmse": 3.9576591904183145
+        },
+        "deposition_ul_cm2": {
+          "mae": 0.003465620063006164,
+          "rmse": 0.00579581826289101
+        },
+        "drift_frac": {
+          "mae": 0.0031115960601553723,
+          "rmse": 0.004737485322582522
+        },
+        "displacement_mm": {
+          "mae": 3.7495902091792552,
+          "rmse": 5.754523630381402
+        }
+      }
+    }
+  },
+  "timing": {
+    "fit_50k_s": 2.324784800002817,
+    "n_candidates": 547,
+    "predict_batch_median_ms": 9.277650009607896,
+    "predict_batch_p95_ms": 12.186590017518027,
+    "model_path": "models\\spray_model_v1.joblib"
+  },
+  "sensitivity": {
+    "dC/dGPA>0 (speed sweep)": {
+      "passed": true,
+      "monotone_step_fraction": 1.0,
+      "total_change": -34.59679015396691,
+      "truth_total_change": -35.17144085136706,
+      "field": "travel_speed_kmh",
+      "output": "coverage_pct",
+      "expected_sign": -1
+    },
+    "ddrift/dU>0": {
+      "passed": true,
+      "monotone_step_fraction": 0.9642857142857143,
+      "total_change": 0.10412252892230266,
+      "truth_total_change": 0.0982320538266539,
+      "field": "wind_speed_ms",
+      "output": "drift_frac",
+      "expected_sign": 1
+    },
+    "ddrift/dH>0": {
+      "passed": true,
+      "monotone_step_fraction": 0.9583333333333334,
+      "total_change": 0.20785561260048713,
+      "truth_total_change": 0.2085438099472131,
+      "field": "boom_height_m",
+      "output": "drift_frac",
+      "expected_sign": 1
+    },
+    "dC/dGPA>0 (size sweep, rank corr)": {
+      "passed": true,
+      "spearman": 1.0,
+      "n": 12
+    },
+    "finer class -> more drift": {
+      "passed": true,
+      "spearman_vmd_vs_drift_by_U": [
+        -0.9051955908791274,
+        -0.9041778068865295,
+        -0.8893586836725844,
+        -0.8803399289538613
+      ],
+      "mean_drift_by_class": {
+        "VF": 0.7416555529507616,
+        "F": 0.34255956535935844,
+        "M": 0.09862142251898406,
+        "C": 0.018172399730781337,
+        "VC": 0.004180768795209712,
+        "XC": 0.0011458268771920275,
+        "UC": 0.0006361764337974694
+      },
+      "truth_mean_drift_by_class": {
+        "VF": 0.7535388389081259,
+        "F": 0.34746607333781276,
+        "M": 0.09909406884408689,
+        "C": 0.01844995840602433,
+        "VC": 0.004515013824900061,
+        "XC": 0.0005384754290472386,
+        "UC": 0.00010220513935878184
+      }
+    }
+  },
+  "acceptance": {
+    "coverage_mae_random_le_3pp": true,
+    "coverage_mae_below_ridge": true,
+    "predict_batch_le_20ms": true,
+    "refit_le_30s": true,
+    "sensitivity_all_pass": true,
+    "interval_80pct_band_coverage": 0.8000798881565808
+  }
+}
