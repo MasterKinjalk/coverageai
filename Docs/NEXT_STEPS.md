@@ -16,7 +16,7 @@ pending inputs left. The only open criterion is the real-card one, blocked by da
 * Decisions: D15 (fair oracle, `loop.FairOracleModel`), D17 (app opt-in controller options) and D16 (residual-offset slow loop, `feedback.ResidualCorrectedModel`) added; D14's offline figure corrected to 94-99 %.
 * Final scorecard and report: `results/scorecard.md`, `reports/final/build.py` + `template.html` -> `final_report.html` / `.pdf`. Every number is read from a results file at build time.
 * README: experiments table, layout, known issues updated.
-* Test suite on the new machine: 402 tests pass (run after the app changes, commit 15229a8), including the three parquet tests that failed on the old laptop.
+* Test suite on the new machine: 406 tests pass, 1 skipped (Zenodo data not downloaded; run on commit c050f75 after the review fixes), including the three parquet tests that failed on the old laptop.
 * App browser check (headless Chrome over CDP): all six strategies and the perfect / classic / noisy readers run, animation controls and end-of-run summary work, card replay consistent; five display bugs fixed; new opt-in sidebar expander "Advanced controller options" (travel speed, boom height, wind forecast), default off and bit-identical when off (D17). App tests: 65 pass.
 * Reader timing re-measured with the same protocol on the desktop CPU (`results/b1_idle_retime.json`): B1 p95 0.52 s, B0 p95 0.15 s. The <= 2 s laptop criterion is met by the earlier busy-laptop measurement (B1 p95 1.09 s, an upper bound for that laptop); the desktop number is not a laptop number.
 * Final report filled with both inputs (`APP_CHECK`, `B1_IDLE_RETIME` in `reports/final/build.py`); no PENDING boxes remain.

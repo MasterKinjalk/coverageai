@@ -107,5 +107,5 @@ tests/               pytest suite
 
 ## Known issues
 
-* On the old Windows laptop, three tests that write parquet failed with a pyarrow DLL error (`test_smoke_pass`, `test_e2e_run_real_writes_logs`, `test_logs_frame_and_save`). This was laptop-specific: on the new Windows 11 machine the full suite (394 tests) passes.
+* On the old Windows laptop, three tests that write parquet failed with a pyarrow DLL error (`test_smoke_pass`, `test_e2e_run_real_writes_logs`, `test_logs_frame_and_save`). This was laptop-specific: on the new Windows 11 machine the full suite (406 tests passed, 1 skipped) passes.
 * Timing tests (`test_render_time_under_one_second_worst_case`) can fail when the machine is busy.

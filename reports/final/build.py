@@ -61,8 +61,8 @@ B1_IDLE_RETIME: dict | None = None     # filled in build() by idle_retime()
 E2E_REAL = {"segments": 40, "seconds": 33, "mean_abs_err_pp": 0.57}
 # Environment facts reported by the orchestrating session on 2026-10-19 (full suite run on the
 # new machine: 32 logical cores, RTX 5070 Ti, CUDA torch 2.11+cu128).
-# Test count: full suite run 2026-10-19 after commit 15229a8 (402 tests, all pass; orchestrator report).
-SUITE = {"tests": 402, "machine": "32 logical cores, RTX 5070 Ti"}
+# Test count: full suite run 2026-10-20 on an isolated worktree of commit c050f75 (406 passed, 1 skipped: Zenodo data not downloaded; orchestrator report).
+SUITE = {"tests": 406, "machine": "32 logical cores, RTX 5070 Ti"}
 
 
 # ----------------------------------------------------------------------------- helpers
