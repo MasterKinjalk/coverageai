@@ -57,7 +57,7 @@ Without uv: `pip install -e ".[vision]" pytest`.
 ## Running things
 
 ```bash
-uv run streamlit run app/main.py          # demo app, http://localhost:8501
+uv run streamlit run app/main.py          # demo app, http://localhost:8501 (?speed=1&boom=1&forecast=ar1 presets the opt-in controls)
 uv run pytest -q                          # tests
 uv run python -m coverageai.e2e --smoke   # end-to-end smoke pass
 uv run python -m coverageai.e2e --real --model spray --verifier b1

@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-19",
+  "protocol": "experiments/eval_verifiers.py time_readers: 30 renderer test-split cards of data/synthetic/v1 (every 6th, 684x1865x3), 1 warm-up call, per-card min of 3 calls; B1 UNetVerifier defaults (device cpu, tile 832x640, batch 1), CUDA hidden",
+  "cpu": "AMD Ryzen 9 9950X 16-Core Processor (desktop; 16 cores / 32 logical)",
+  "torch_threads": 8,
+  "cpu_load_note": "Win32_Processor LoadPercentage fluctuated 5-51% (other idle-ish desktop apps, Cursor/claude); no heavy jobs running",
+  "min_of_3": {
+    "b0": {"n": 30, "median_s": 0.1097, "p95_s": 0.1464, "max_s": 0.1533},
+    "b1": {"n": 30, "median_s": 0.4088, "p95_s": 0.5211, "max_s": 0.5460}
+  },
+  "single_call": {
+    "b0": {"n": 30, "median_s": 0.1069, "p95_s": 0.1561, "max_s": 0.1614},
+    "b1": {"n": 30, "median_s": 0.4156, "p95_s": 0.5457, "max_s": 0.6733}
+  },
+  "previous_busy_cpu": {"b0": {"median_s": 0.18, "p95_s": 0.26, "max_s": 0.32}, "b1": {"median_s": 0.82, "p95_s": 1.09, "max_s": 1.33}},
+  "command": "CUDA_VISIBLE_DEVICES=\"\" uv run --no-sync python <scratchpad>/retime.py out.json  (imports experiments/eval_verifiers: dataset_renderer, _b0_reader, _b1_readers, time_readers with --timing 30 --timing-repeats 3 equivalent)"
+}

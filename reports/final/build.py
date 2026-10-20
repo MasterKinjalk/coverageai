@@ -10,10 +10,11 @@ results/scorecard.md is read from a results file at build time:
     forecast_eval.json, hybrid_eval.md, Docs/ai_usage_log.md, Docs/decisions.md, experiments/figures/*.png
 Typed numbers are limited to the constants below, each with a comment giving its source.
 
-Two inputs from the orchestrating session are still open; while they are None the report shows a
-dashed PENDING box and the scorecard says "pending":
+Two inputs from the orchestrating session (both received 2026-10-19); if either is set to None the
+report shows a dashed PENDING box and the scorecard says "pending":
     APP_CHECK       (a) result of the Streamlit app browser check (HTML-safe text)
-    B1_IDLE_RETIME  (b) B1 U-Net per-card CPU time re-measured on an idle CPU
+    B1_IDLE_RETIME  (b) B0/B1 per-card CPU time re-measured on a lightly loaded desktop CPU,
+                        read from results/b1_idle_retime.json
 Placeholders in template.html use {{name}}. Captions use "Table #key." / "Figure #key." and prose uses
 @tab:key / @fig:key; numbers are assigned in document order.
 """
@@ -40,13 +41,19 @@ EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 MAX_W = 1600
 JPEG_THRESHOLD = 700 * 1024      # PNGs still larger than this after resizing become JPEG
 
-# ----------------------------------------------------------------------------- open inputs
-# (a) Streamlit app browser check (orchestrator, pending). Set to an HTML-safe sentence, e.g.
-#     "All six strategies and three card readers ran in Edge; Play, scrubber and summary work.".
-APP_CHECK: str | None = None
-# (b) B1 per-card CPU time on an idle CPU (orchestrator re-measurement, pending). Expected keys:
-#     {"n": cards, "median_s": .., "p95_s": .., "max_s": .., "cpu": "short CPU description"}.
-B1_IDLE_RETIME: dict | None = None
+# ----------------------------------------------------------------------------- orchestrator inputs
+# (a) Streamlit app browser check, summarized from the browser-check agent's report to the
+#     orchestrator (2026-10-19; commit 15229a8 "App: fix browser-check bugs, add opt-in
+#     speed/boom/forecast controls"). The 30 s / 40-card U-Net figure is that agent's measurement.
+APP_CHECK: str | None = (
+    "Checked on 2026-10-19 with headless Chrome over CDP against the live app: all six strategies and the perfect, "
+    "classic and noisy readers ran; play/pause, speeds, scrubber, hover and click-to-seek and the end-of-run summary work; "
+    "<code>fast_slow</code> shows the learning-between-passes table and the card replay is consistent for every strategy at "
+    "med and high mismatch; the Compare tab, Spray lab and nozzle explorer render. A full 40-card pass with the U-Net reader "
+    "takes about 30 s on the idle desktop CPU. Five display bugs found in the check were fixed; the app tests pass.")
+# (b) Per-card reader timing re-measured on 2026-10-19 (same protocol as results/verification_eval.json:
+#     30 renderer test cards, warm-up, min of 3 calls, B1 on CPU). Read from the results file.
+B1_IDLE_RETIME: dict | None = None     # filled in build() by idle_retime()
 
 # ----------------------------------------------------------------------------- typed constants (with sources)
 # Orchestrator measurement quoted in the midterm work brief (2026-10-18), also typed in
@@ -74,6 +81,15 @@ def read_md(name: str) -> str:
     if not p.exists():
         raise SystemExit(f"results/{name} is required")
     return p.read_text(encoding="utf-8")
+
+
+def idle_retime() -> dict | None:
+    """results/b1_idle_retime.json -> {"cpu", "load", "b0", "b1", "b1_single"} or None."""
+    d = load_json("b1_idle_retime.json")
+    if not d:
+        return None
+    return {"cpu": d["cpu"], "load": d.get("cpu_load_note", ""), "b0": d["min_of_3"]["b0"], "b1": d["min_of_3"]["b1"],
+            "b1_single": d.get("single_call", {}).get("b1")}
 
 
 def pending(title: str, text: str) -> str:
@@ -412,8 +428,14 @@ def verification_block(figs) -> tuple[str, dict]:
               f"the 2 s target, but the B1 numbers were taken while other experiments loaded the CPU.</p>")
     if B1_IDLE_RETIME:
         t = B1_IDLE_RETIME
-        timing += (f"<p>Re-measured on an idle CPU ({html.escape(str(t.get('cpu', '')))}; {t['n']} cards): B1 median {f(t['median_s'])} s, p95 {f(t['p95_s'])} s, "
-                   f"maximum {f(t['max_s'])} s per card (target &le; 2 s).</p>")
+        b0i, b1i, b1s1 = t["b0"], t["b1"], t.get("b1_single")
+        timing = (f"<p><b>Runtime: met.</b> Controlled timing on the project laptop ({t0['n']} renderer cards, minimum of {t0['repeats']} calls after warm-up) "
+                  f"gave B0 median {f(t0['median_s'])} s, p95 {f(t0['p95_s'])} s, and B1 median {f(t1['median_s'])} s, p95 {f(t1['p95_s'])} s, maximum {f(t1['max_s'])} s, "
+                  "while other experiments loaded the CPU. Contention can only slow a reader down, so these are upper bounds for that laptop and already inside the "
+                  f"2 s target. The same protocol on the final desktop ({html.escape(t['cpu'])}, lightly loaded, B1 forced to CPU) gives B0 median {f(b0i['median_s'])} s, "
+                  f"p95 {f(b0i['p95_s'])} s, and B1 median {f(b1i['median_s'])} s, p95 {f(b1i['p95_s'])} s, maximum {f(b1i['max_s'])} s"
+                  + (f" (single call without the minimum of 3: B1 p95 {f(b1s1['p95_s'])} s, maximum {f(b1s1['max_s'])} s)" if b1s1 else "")
+                  + ". This shows the readers' cost without contention; it is a desktop, not a laptop number. Source: <code>results/b1_idle_retime.json</code>.</p>")
     else:
         timing += pending("B1 idle-CPU timing.", "The B1 per-card CPU time is being re-measured on an idle CPU (target &le; 2 s on a laptop CPU; the 1.09 s p95 "
                                                   "above was measured on a busy CPU). Fill <code>B1_IDLE_RETIME</code> in <code>reports/final/build.py</code>.")
@@ -749,12 +771,13 @@ def scorecard(mp, sel, ver, cl, sb, fc, hy, n_sim_tests) -> list[dict]:
     S = []
     add = lambda area, target, result, st, src: S.append(dict(area=area, target=target, result=result, status=st, source=src))  # noqa: E731
     e = E2E_REAL
-    app = (f"Streamlit app browser check: {APP_CHECK}" if APP_CHECK else "Streamlit app browser check: **pending**.")
+    app = ("Streamlit app checked in a browser: all strategies and readers run, every decision is shown." if APP_CHECK
+           else "Streamlit app browser check: **pending**.")
     add("End-to-end demonstration",
         "A simulated field pass runs from prediction to correction without manual steps, and every decision is logged and visualized.",
         f"`python -m coverageai.e2e --real`: {e['segments']}-segment pass with rendered cards and B0 in {e['seconds']} s, mean abs(measured - true) "
         f"{e['mean_abs_err_pp']:.2f} pp (midterm measurement); every segment logged as a SegmentLog row. {app}",
-        "met" if APP_CHECK else "pending", "midterm e2e run; `app/main.py`")
+        "met" if APP_CHECK else "pending", "midterm e2e run; `app/main.py` browser check")
     add("Simulator and dataset",
         "Outputs follow the encoded trends (coverage rises with volume; drift rises with wind speed, release height, and fine-droplet share) across the M1 operating ranges.",
         f"{n_sim_tests} simulator tests pass, including a monotone sweep for each trend and the physical anchors; full suite {SUITE['tests']} tests pass.",
@@ -788,13 +811,14 @@ def scorecard(mp, sel, ver, cl, sb, fc, hy, n_sim_tests) -> list[dict]:
     t0, t1 = ver["t_b0"], ver["t_b1"]
     if B1_IDLE_RETIME:
         t = B1_IDLE_RETIME
-        rt = (f"B0 p95 {f(t0['p95_s'])} s; B1 re-timed on an idle CPU: median {f(t['median_s'])} s, p95 {f(t['p95_s'])} s, max {f(t['max_s'])} s ({t['n']} cards).")
-        rst = "met" if t0["p95_s"] <= 2 and t["p95_s"] <= 2 else "missed"
+        rt = (f"Laptop, busy CPU (upper bound): B0 p95 {f(t0['p95_s'])} s; B1 p95 {f(t1['p95_s'])} s, max {f(t1['max_s'])} s ({t1['n']} cards). "
+              f"Desktop re-time, light load (not a laptop): B0 p95 {f(t['b0']['p95_s'])} s; B1 p95 {f(t['b1']['p95_s'])} s, max {f(t['b1']['max_s'])} s.")
+        rst = "met" if t0["p95_s"] <= 2 and t1["p95_s"] <= 2 else "missed"
     else:
         rt = (f"B0 p95 {f(t0['p95_s'])} s; B1 p95 {f(t1['p95_s'])} s, max {f(t1['max_s'])} s ({t1['n']} cards, busy CPU). "
               "B1 idle-CPU re-timing **pending**.")
         rst = "pending"
-    add("Verification: speed", "<= 2 s per card on a laptop CPU.", rt, rst, "`results/verification_eval.json` (timing)")
+    add("Verification: speed", "<= 2 s per card on a laptop CPU.", rt, rst, "`results/verification_eval.json` (timing)" + ("; `results/b1_idle_retime.json`" if B1_IDLE_RETIME else ""))
     add("Verification: real cards", "Coverage MAE <= 5 pp on real cards.",
         "Untested: the annotated real cards (Zenodo 14010262) are restricted; evaluation code is ready.", "blocked", "D9; `results/verification_summary.md`")
     add("Closed loop (fair oracle)",
@@ -934,6 +958,8 @@ def summary_text(mp, sel, ver, cl, n_open) -> str:
 
 # ----------------------------------------------------------------------------- main
 def build(do_pdf: bool = True) -> None:
+    global B1_IDLE_RETIME
+    B1_IDLE_RETIME = idle_retime()
     figs = prep_figures()
     need = ["sim_trends", "model_parity", "wsp_examples", "b0_parity", "b1_parity_left", "selector_tradeoff",
             "closed_loop_met_spray", "closed_loop_volume_drift", "bias_trace_spray", "slow_loop_spray", "forecast_eval", "demo_live_top"]
