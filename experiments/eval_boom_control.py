@@ -197,6 +197,9 @@ def main():
           + ", ".join(f"{f} {v:.2f} m" for f, v in out["min_overlap_height_m"].items()) + ". "
           "Scoring is paired: each variant's choice for scenario i is simulated with rng [seed, i]; CIs are "
           "paired bootstrap over scenarios of the per-scenario difference vs 'off'.", ""]
+    notes = ROOT / "results" / "boom_control_eval_notes.md"   # hand-written verdict, kept across reruns
+    if notes.exists():
+        md += [notes.read_text(encoding="utf8").strip(), ""]
     for name, d in out["open_loop"].items():
         md += [f"## Open loop (selector model: {name})", "", fmt_a(d), ""]
     if "closed_loop" in out:
