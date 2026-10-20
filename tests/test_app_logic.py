@@ -204,3 +204,72 @@ def test_app_policies_all_run_and_oracle_card_in_compare(modules):
     res = al.compare_policies(modules, conds, 2, "med", 30.0, policies=al.APP_POLICIES, n_learn=1)
     assert list(res) == list(al.APP_POLICIES)
     assert len(al.comparison_table(res)) == len(al.APP_POLICIES)
+
+
+def test_noisy_verifier_is_not_reported_as_image_analysis():
+    """The image-free noisy sensor never reads a rendered card in the loop, so the pass must not
+    be flagged as vision (the app would otherwise say 'image analysis')."""
+    mods = al.build_modules_adapter("oracle_nominal", "noisy")
+    conds = al.make_conditions("calm_morning", 2, n_segments=5)
+    r = al.run_pass_wrapper(mods, conds, "fast", 2, "med", 30.0)
+    assert hasattr(mods.verifier, "measure_outcome")
+    assert r.used_vision is False
+    # same numbers as an explicit render=False pass (nothing else changed)
+    r0 = al.run_pass_wrapper(mods, conds, "fast", 2, "med", 30.0, render=False)
+    assert [lg.meas.coverage_pct for lg in r.logs] == [lg.meas.coverage_pct for lg in r0.logs]
+
+
+def test_perfect_and_image_verifiers_keep_their_vision_flag(modules):
+    conds = al.make_conditions("calm_morning", 2, n_segments=3)
+    assert al.run_pass_wrapper(modules, conds, "open", 2, "none", 30.0).used_vision is False
+
+
+# ------------------------------------------------- opt-in controller options (sidebar "Advanced")
+
+def test_options_off_are_bit_identical_to_default(modules):
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
+    a = al.run_pass_wrapper(modules, conds, "fast", 4, "high", 30.0, 0.6)
+    b = al.run_pass_wrapper(modules, conds, "fast", 4, "high", 30.0, 0.6, speed_control=False,
+                            boom_control=False, forecaster="off")
+    assert [lg.u for lg in a.logs] == [lg.u for lg in b.logs]
+    assert [lg.outcome.coverage_pct for lg in a.logs] == [lg.outcome.coverage_pct for lg in b.logs]
+    assert all(lg.u.travel_speed_kmh is None and lg.u.boom_height_m is None for lg in b.logs)
+    assert not any("fc_wind_ms" in lg.extra for lg in b.logs)
+
+
+def test_speed_and_boom_control_run_and_restore_selector(modules):
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
+    r = al.run_pass_wrapper(modules, conds, "fast", 4, "med", 30.0, 0.6, speed_control=True,
+                            boom_control=True)
+    assert r.n == 10
+    assert any(lg.u.travel_speed_kmh is not None for lg in r.logs)
+    assert any(lg.u.boom_height_m is not None for lg in r.logs)
+    # the shared, cached selector is back to its defaults (off) after the call
+    assert modules.selector.speed_options_kmh == [] and modules.selector.boom_height_options_m == []
+    # the card replay still reproduces the recorded outcome with the controlled setting
+    assert all(al.replay_card(r, k).consistent for k in (0, 5, 9))
+    # best_fixed keeps its single setting (it does not select)
+    bf = al.run_pass_wrapper(modules, conds, "best_fixed", 4, "med", 30.0, speed_control=True)
+    assert len({lg.u for lg in bf.logs}) == 1
+
+
+def test_forecaster_option_runs_for_supported_policies_only(modules):
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
+    on = al.run_pass_wrapper(modules, conds, "fast", 4, "high", 30.0, 0.6, forecaster="ar1")
+    assert all("fc_plan_wind_ms" in lg.extra for lg in on.logs)
+    orc = al.run_pass_wrapper(modules, conds, "oracle", 4, "high", 30.0, 0.6, forecaster="ar1")
+    orc0 = al.run_pass_wrapper(modules, conds, "oracle", 4, "high", 30.0, 0.6)
+    assert [lg.u for lg in orc.logs] == [lg.u for lg in orc0.logs]      # ignored by the oracle
+    fs = al.run_pass_wrapper(modules, conds, "fast_slow", 4, "high", 30.0, 0.6, forecaster="ar1",
+                             speed_control=True, n_learn=1)
+    assert fs.n == 10 and len(fs.meta["passes"]) == 2
+    with pytest.raises(ValueError):
+        al.run_pass_wrapper(modules, conds, "fast", 4, "high", 30.0, forecaster="bogus")
+
+
+def test_top_candidates_label_includes_controlled_speed_and_height(modules):
+    conds = al.make_conditions("calm_morning", 1, n_segments=4)
+    r = al.run_pass_wrapper(modules, conds, "open", 1, "none", 30.0, speed_control=True,
+                            boom_control=True)
+    txt = " ".join(al.top_candidates_frame(r.info_for(0))["Setting"])
+    assert "km/h" in txt and "boom" in txt

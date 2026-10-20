@@ -23,7 +23,8 @@ from spray_lab_view import render_spray_lab
 from coverageai import app_logic as al
 from coverageai import catalog, scenarios
 from coverageai.config import spec
-from coverageai.contracts import Conditions, Setting, coverage_class
+from coverageai.contracts import (Conditions, Setting, coverage_class, effective_boom_height_m,
+                                   effective_speed_kmh)
 
 st.set_page_config(page_title="CoverageVision AI", page_icon=None, layout="wide",
                    initial_sidebar_state="expanded")
@@ -146,9 +147,11 @@ def loop_steps_html(res, k: int) -> str:
                 f"{100 * lg.pred.drift_frac:.1f}% drift for the chosen setting")
         if res.policy == "fast_slow":
             pred += f" (including {lg.extra.get('slow_corr', 0.0):+.1f} pp learned in earlier passes)"
+    if "fc_plan_wind_ms" in lg.extra:
+        pred += f"; planned with a forecast wind of {lg.extra['fc_plan_wind_ms']:.1f} m/s (reading {lg.x.wind_speed_ms:.1f})"
     if abs(lg.bias) > 1e-9:
         pred += f"; feedback shifts it by {lg.bias:+.1f} pp to {lg.corrected_pred_cov:.1f}%"
-    sel = (f"{L.setting(lg.u.family, lg.u.size, lg.u.pressure_psi)} · {L.droplet(d.droplet_class)} "
+    sel = (f"{L.setting_of(lg.u)} · {L.droplet(d.droplet_class)} "
            f"droplets · {d.app_rate_gpa:.1f} gal/acre")
     if lg.selector_infeasible:
         sel += " · no setting reached the target, best effort used"
@@ -182,8 +185,8 @@ def render_learning_table(passes: list[dict]) -> None:
         {"Sections meeting target (%)": "{:.0f}", "Average error (pp)": "{:.2f}",
          "Learned correction (pp)": "{:+.2f}"}), hide_index=True, width="stretch")
     b.altair_chart(alt.Chart(show).mark_bar(color="#6ea8fe").encode(
-        x=alt.X("Pass:N", sort=None, title=None),
-        y=alt.Y("Average error (pp):Q", title="Average error (pp)"),
+        x=alt.X("Pass:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
+        y=alt.Y("Average error (pp):Q", title="Error (pp)"),
         tooltip=["Pass", "Average error (pp)"]).properties(height=140), width="stretch")
     st.caption("Each earlier pass is a new simulated run over the same field with fresh gusts, canopy and "
                "wear; cards from it teach the model a correction. The last pass is the one shown below.")
@@ -247,6 +250,34 @@ with st.sidebar:
                                       "plus simulated sensor error. Classic image analysis and the "
                                       "neural network look at a picture of the card, like a real camera "
                                       "would (slower).")
+    def keep_advanced_open() -> None:
+        SS["adv_open"] = True        # an expander otherwise folds back up on the rerun a click causes
+
+    with st.expander("Advanced controller options",
+                     expanded=bool(SS.get("adv_open")) or any(
+                         st.query_params.get(q) == "1" for q in ("speed", "boom"))
+                     or st.query_params.get("forecast", "off") != "off"):
+        speed_ctl = st.checkbox("Let the controller change travel speed",
+                                value=st.query_params.get("speed", "0") == "1",
+                                on_change=keep_advanced_open,
+                                help="Off: speed is whatever the field conditions say. On: besides the nozzle "
+                                     "setting, the controller may drive up to 25% slower or faster (within "
+                                     "limits) to trade spray volume against coverage and drift.")
+        boom_ctl = st.checkbox("Let the controller change boom height",
+                               value=st.query_params.get("boom", "0") == "1",
+                               on_change=keep_advanced_open,
+                               help="Off: boom height is whatever the field conditions say. On: the controller "
+                                    "may also raise or lower the boom (within 25% and the legal range, never "
+                                    "so low that the spray fans stop overlapping). Lower booms drift less.")
+        fc_opts = list(al.FORECAST_CHOICES)
+        forecast_name = st.selectbox("Wind forecast", fc_opts, format_func=L.forecast,
+                                     index=_qp_index("forecast", fc_opts, "off"),
+                                     on_change=keep_advanced_open,
+                                     help="Off: the controller plans with the wind read at the start of each "
+                                          "section. Otherwise it predicts the wind the spray will meet from the "
+                                          "gusts it measured in the sections already sprayed. Used by the "
+                                          "first three strategies only (not by the knows-hidden-conditions "
+                                          "or single-nozzle strategies).")
     modules, err = get_modules(model_name, verifier_name)
     if err:
         st.error(f"{L.model(model_name)} / {L.verifier(verifier_name)} unavailable: {err}")
@@ -254,7 +285,9 @@ with st.sidebar:
         st.caption("Falling back to Physics model (ideal) with Perfect reading.")
         model_name, verifier_name = "oracle_nominal", "perfect"
     st.divider()
-    cfg = (preset, int(seed), mismatch, policy, float(c_req), float(lam), model_name, verifier_name)
+    cfg = (preset, int(seed), mismatch, policy, float(c_req), float(lam), model_name, verifier_name,
+           bool(speed_ctl), bool(boom_ctl), forecast_name)
+    ctl_opts = dict(speed_control=bool(speed_ctl), boom_control=bool(boom_ctl), forecaster=forecast_name)
 
     def run_pass_cb() -> None:
         # Callbacks run before widgets exist, so the "cursor" slider key may be reset here
@@ -294,7 +327,8 @@ if SS["result"] is None or SS["want_run"]:
     SS["want_run"] = False
     conds0 = cached_conditions(preset, int(seed))
     with st.spinner("Running pass (selector, simulator, card, feedback) ..."):
-        new = al.run_pass_wrapper(modules, conds0, policy, int(seed), mismatch, float(c_req), float(lam))
+        new = al.run_pass_wrapper(modules, conds0, policy, int(seed), mismatch, float(c_req), float(lam),
+                                  **ctl_opts)
     new.meta["cfg"] = cfg
     SS.update(result=new, run_id=SS["run_id"] + 1, playing=False, card_cache={})
     st.rerun()
@@ -364,8 +398,12 @@ with tab_live:
             f'<tr><td>Driving direction</td><td>{x.heading_deg:.0f}°</td></tr>'
             f'<tr><td>Crosswind / headwind</td><td>{d.u_cross_ms:+.1f} / {d.u_along_ms:+.1f} m/s</td></tr>'
             f'<tr><td>Temperature / humidity</td><td>{x.temp_c:.1f} °C / {x.rh_pct:.0f} %</td></tr>'
-            f'<tr><td>Travel speed</td><td>{x.travel_speed_kmh:.1f} km/h</td></tr>'
-            f'<tr><td>Boom height</td><td>{x.boom_height_m:.2f} m</td></tr></table>',
+            f'<tr><td>Travel speed</td><td>{effective_speed_kmh(x, lg.u):.1f} km/h'
+            + (f' (field {x.travel_speed_kmh:.1f}, set by controller)' if lg.u.travel_speed_kmh is not None else '')
+            + '</td></tr>'
+            f'<tr><td>Boom height</td><td>{effective_boom_height_m(x, lg.u):.2f} m'
+            + (f' (field {x.boom_height_m:.2f}, set by controller)' if lg.u.boom_height_m is not None else '')
+            + '</td></tr></table>',
             unsafe_allow_html=True)
         badges = []
         if lg.selector_infeasible:
@@ -375,7 +413,7 @@ with tab_live:
         if lg.flagged_retreat:
             badges.append(badge("Needs re-spraying", "warn"))
         st.markdown(
-            f'<div class="panel"><b>Chosen nozzle setting:</b> {L.setting(lg.u.family, lg.u.size, lg.u.pressure_psi)}<br>'
+            f'<div class="panel"><b>Chosen nozzle setting:</b> {L.setting_of(lg.u)}<br>'
             f'<span style="color:#8a94a6">flow {d.flow_gpm:.3f} gal/min, {d.app_rate_gpa:.1f} gal/acre, '
             f'{L.droplet(d.droplet_class).lower()} droplets, median droplet size {d.vmd_um:.0f} µm, '
             f'spray fan {d.spray_angle_deg:.0f}°</span><br>'
@@ -441,6 +479,10 @@ with tab_live:
         if res.modules.verifier is None:
             st.caption("Card reader is set to Perfect reading: the card reading equals the actual coverage; "
                        "the card is shown for inspection only.")
+        elif hasattr(res.modules.verifier, "measure_outcome"):
+            st.caption("Card reader is the simulated sensor: the card reading is the actual coverage plus "
+                       "sensor error and no picture is read during the run. The card and outline shown "
+                       "here are for illustration only (read afterwards with classic image analysis).")
 
     # ---- 4. time series
     st.subheader("Coverage along the field")
@@ -481,7 +523,7 @@ with tab_cmp:
             fixed = al.best_fixed_for(modules, conds, float(c_req)) if "best_fixed" in pols else None
             SS["compare"] = (cfg, al.compare_policies(
                 modules, conds, int(seed), mismatch, float(c_req), float(lam), pols or ["open"],
-                render=use_vis, fixed_setting=fixed))
+                render=use_vis, fixed_setting=fixed, **ctl_opts))
     if SS["compare"] is None:
         st.info("Press **Run comparison** to run the selected strategies on this scenario.")
     else:
@@ -491,15 +533,15 @@ with tab_cmp:
         table = al.comparison_table(results)
         if "best_fixed" in results:
             fs_ = results["best_fixed"].fixed_setting
-            st.caption(f"{L.policy('best_fixed')} uses {L.setting(fs_.family, fs_.size, fs_.pressure_psi)}")
+            st.caption(f"{L.policy('best_fixed')} uses {L.setting_of(fs_)}")
         table = table.assign(policy=table["policy"].map(L.policy))
-        a, b, c = st.columns(3)
+        a, b, c = st.columns([5, 3, 3])
         a.altair_chart(charts.policy_bars(table, "requirement met (%)", "Sections meeting target (%)",
                                           color="#3ddc97"), width="stretch")
         b.altair_chart(charts.policy_bars(table, "mean volume (GPA)", "Average spray volume (gal/acre)",
-                                          color="#6ea8fe"), width="stretch")
+                                          color="#6ea8fe", show_labels=False), width="stretch")
         c.altair_chart(charts.policy_bars(table, "mean drift (frac)", "Average drift (fraction)",
-                                          color="#ffb84d"), width="stretch")
+                                          color="#ffb84d", show_labels=False), width="stretch")
         CC = L.CMP_COLS
         st.dataframe(table.rename(columns=CC).style.format({
             CC["requirement met (%)"]: "{:.0f}", CC["mean shortfall (pp)"]: "{:.2f}",

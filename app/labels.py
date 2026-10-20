@@ -61,6 +61,26 @@ def setting(fam: str, sz: str, psi: float) -> str:
     return f"{fam} {sz} at {psi:g} psi"
 
 
+def setting_of(u) -> str:
+    """Full text of a chosen Setting, including the controller-chosen travel speed / boom height
+    when the opt-in speed or boom-height control picked them."""
+    t = setting(u.family, u.size, u.pressure_psi)
+    if getattr(u, "travel_speed_kmh", None) is not None:
+        t += f", {u.travel_speed_kmh:g} km/h"
+    if getattr(u, "boom_height_m", None) is not None:
+        t += f", boom {u.boom_height_m:.2f} m"
+    return t
+
+
+FORECAST = {"off": "Off (plan with the wind read at the section start)",
+            "last": "Last wind reading", "ewma": "Smoothed recent readings (EWMA)",
+            "ar1": "Statistical forecast (AR(1))",
+            "ar1+gust": "Statistical forecast + gust safety margin"}
+
+
+def forecast(k): return _get(FORECAST, k)
+
+
 def parse_setting_text(txt: str) -> str:
     """'XR-04 @ 40 psi' -> 'XR 04 at 40 psi'."""
     return re.sub(r"^(\w+)-(\w+) @ ", r"\1 \2 at ", str(txt))
