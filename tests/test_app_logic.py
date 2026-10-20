@@ -273,3 +273,92 @@ def test_top_candidates_label_includes_controlled_speed_and_height(modules):
                             boom_control=True)
     txt = " ".join(al.top_candidates_frame(r.info_for(0))["Setting"])
     assert "km/h" in txt and "boom" in txt
+
+
+# ---------------------------- review fixes: failed calls leave the cached selector untouched
+
+def _selector_state(sel):
+    return (sel.lam, list(sel.speed_options_kmh), list(sel.boom_height_options_m))
+
+
+def test_failed_call_leaves_cached_selector_unmodified(modules):
+    """Bad forecaster name: the ValueError must fire before lam / option grids are mutated."""
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=6)
+    before = _selector_state(modules.selector)
+    with pytest.raises(ValueError):
+        al.run_pass_wrapper(modules, conds, "fast", 1, "med", 30.0, 0.9, speed_control=True,
+                            boom_control=True, forecaster="bogus")
+    assert _selector_state(modules.selector) == before
+    with pytest.raises(ValueError):
+        al.compare_policies(modules, conds, 1, "med", 30.0, 0.9, policies=("open", "fast"),
+                            speed_control=True, forecaster="bogus")
+    assert _selector_state(modules.selector) == before
+    # a later "off" run equals a fresh off run (no leaked lambda / speed grid)
+    a = al.run_pass_wrapper(modules, conds, "fast", 4, "med", 30.0)
+    fresh = al.build_modules_adapter("oracle_nominal", "perfect")
+    b = al.run_pass_wrapper(fresh, conds, "fast", 4, "med", 30.0)
+    assert [lg.u for lg in a.logs] == [lg.u for lg in b.logs]
+    assert [lg.outcome.coverage_pct for lg in a.logs] == [lg.outcome.coverage_pct for lg in b.logs]
+
+
+def test_unsupported_selector_error_leaves_selector_unmodified(modules):
+    """Selector that has the speed grid but not the boom grid: nothing may stay modified."""
+    import dataclasses
+
+    class SpeedOnlySelector:
+        def __init__(self):
+            self.lam = 0.6
+            self.speed_options_kmh = []
+
+        def select(self, x, model, bias, c_req):
+            raise AssertionError("must not run")
+
+    stub = SpeedOnlySelector()
+    mods = dataclasses.replace(modules, selector=stub)
+    conds = al.make_conditions("calm_morning", 1, n_segments=4)
+    with pytest.raises(ValueError, match="boom-height"):
+        al.run_pass_wrapper(mods, conds, "open", 1, "none", 30.0, 0.9, speed_control=True,
+                            boom_control=True)
+    assert stub.lam == 0.6 and stub.speed_options_kmh == []
+
+
+# ------------------- review fix: fast_slow + forecaster, final refit uses the forecast wind
+
+def _spy_final_refit(monkeypatch, modules, forecaster):
+    from coverageai import feedback
+    fits, slow_logs = [], []
+    orig_fit = feedback.ResidualCorrectedModel.fit
+    orig_slow = al.run_passes_slow
+
+    def fit_spy(self, records, *a, **k):
+        fits.append(list(records))
+        return orig_fit(self, records, *a, **k)
+
+    def slow_spy(*a, **k):
+        logs = orig_slow(*a, **k)
+        slow_logs.append(logs)
+        return logs
+
+    monkeypatch.setattr(feedback.ResidualCorrectedModel, "fit", fit_spy)
+    monkeypatch.setattr(al, "run_passes_slow", slow_spy)
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
+    al.run_pass_wrapper(modules, conds, "fast_slow", 4, "high", 30.0, 0.6, forecaster=forecaster,
+                        n_learn=1)
+    return fits, slow_logs
+
+
+def test_fast_slow_final_refit_uses_forecast_wind(modules, monkeypatch):
+    fits, slow_logs = _spy_final_refit(monkeypatch, modules, "ar1")
+    assert len(fits) == 1 and len(slow_logs) == 1        # n_learn=1: only the final refit fits
+    logs = slow_logs[0]
+    assert all("fc_wind_ms" in lg.extra for lg in logs)
+    recs = fits[0]
+    assert [r[0].wind_speed_ms for r in recs] == [lg.extra["fc_wind_ms"] for lg in logs]
+    assert any(lg.extra["fc_wind_ms"] != lg.x.wind_speed_ms for lg in logs)   # not vacuous
+
+
+def test_fast_slow_final_refit_forecaster_off_uses_nominal_wind(modules, monkeypatch):
+    fits, slow_logs = _spy_final_refit(monkeypatch, modules, None)
+    assert len(fits) == 1
+    logs = slow_logs[0]
+    assert [r[0] for r in fits[0]] == [lg.x for lg in logs]

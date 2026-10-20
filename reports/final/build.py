@@ -61,7 +61,8 @@ B1_IDLE_RETIME: dict | None = None     # filled in build() by idle_retime()
 E2E_REAL = {"segments": 40, "seconds": 33, "mean_abs_err_pp": 0.57}
 # Environment facts reported by the orchestrating session on 2026-10-19 (full suite run on the
 # new machine: 32 logical cores, RTX 5070 Ti, CUDA torch 2.11+cu128).
-SUITE = {"tests": 394, "machine": "32 logical cores, RTX 5070 Ti"}
+# Test count: full suite run 2026-10-19 after commit 15229a8 (402 tests, all pass; orchestrator report).
+SUITE = {"tests": 402, "machine": "32 logical cores, RTX 5070 Ti"}
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -110,7 +111,7 @@ def sgn(x, n=1):
 
 
 STATUS_LABEL = {"met": "met", "missed": "missed", "partial": "partial", "blocked": "blocked",
-                "neg": "done-negative", "pending": "pending"}
+                "neg": "done-negative", "incon": "inconclusive, not adopted", "pending": "pending"}
 
 
 def status(kind: str, text: str | None = None) -> str:
@@ -608,24 +609,31 @@ def speed_boom_parts() -> tuple[str, str, dict]:
     ol_spr = dicts(BT[1])
     cl = dicts(next(t for t in BT if t[0][0] == "policy/mismatch/variant"))
     smd = read_md("speed_control_eval.md")
-    sp_cl = dicts(next(t for t in md_tables(smd) if t[0][0] == "policy"))
+    ST = md_tables(smd)
+    sp_cl = dicts(next(t for t in ST if t[0][0] == "policy"))
+    sp_ol_spray = dicts(ST[1])                       # "## Open loop (spray)": 2 km/h grid, single draw
+    boom_speeds = re.search(r"speeds \[([^\]]+)\] km/h", bmd).group(1).split(", ")
     DD, DS = "d drift vs off [95% CI]", "d success vs off [95% CI]"
     s = {
         "spr_off": pick(ol_spr, variant="off"), "spr_speed": pick(ol_spr, variant="speed"),
         "nom_off": pick(ol_nom, variant="off"), "nom_speed": pick(ol_nom, variant="speed"),
         "pilot_off": pick(sp_cl, policy="off/fast")["frac_met"], "pilot_on": pick(sp_cl, policy="on_band_0.25/fast")["frac_met"],
         "pilot_gpa_off": pick(sp_cl, policy="off/fast")["GPA"], "pilot_gpa_on": pick(sp_cl, policy="on_band_0.25/fast")["GPA"],
+        "fine_off": pick(sp_ol_spray, config="off")["success"], "fine_on": pick(sp_ol_spray, config="on_band_0.25")["success"],
+        "boom_grid": f"{float(boom_speeds[0]):g}&ndash;{float(boom_speeds[-1]):g} km/h in {float(boom_speeds[1]) - float(boom_speeds[0]):g} km/h steps",
     }
     speed = (
         "<p><b>Design (D11, schema 1.1).</b> <code>Setting.travel_speed_kmh</code> is optional; when the selector option <code>speed_options_kmh</code> is set it "
         "chooses a grid speed within &plusmn;25% of the segment's current speed and inside the spec range. Application rate scales as GPA &prop; 1/speed. Default off; "
         "with it off every result is bit-identical.</p>"
-        f"<p><b>Result: a small drift reduction, no gain in success.</b> On the 200 paired no-mismatch scenarios of the boom-height evaluation (the <code>speed</code> variant, "
-        f"same seeds as <code>off</code>), the learned selector's success changes by {ci_pp(s['spr_speed'][DS])} and drift by {s['spr_speed'][DD]} (volume "
-        f"{s['spr_off']['mean GPA']} to {s['spr_speed']['mean GPA']} GPA). With the mismatch-free physics as the selector model: success {ci_pp(s['nom_speed'][DS])}, drift "
-        f"{s['nom_speed'][DD]}. An earlier closed-loop pilot (<code>results/speed_control_eval.md</code>: med mismatch, 4 presets, 3 seeds, no CI) saw the fast loop "
-        f"meet <i>C</i><sub>req</sub> in {s['pilot_on']} of segments with speed control against {s['pilot_off']} without, at {s['pilot_gpa_on']} against {s['pilot_gpa_off']} GPA; "
-        "it is too small to support a conclusion, but it points the same way as the boom-height closed loop below. Default stays off.</p>")
+        f"<p><b>Result: inconclusive, not adopted.</b> On the 200 paired no-mismatch scenarios of the boom-height evaluation (the <code>speed</code> variant, "
+        f"grid {s['boom_grid']}, same seeds as <code>off</code>), the learned selector's success changes by {ci_pp(s['spr_speed'][DS])} and drift by {s['spr_speed'][DD]} "
+        f"(volume {s['spr_off']['mean GPA']} to {s['spr_speed']['mean GPA']} GPA); with the mismatch-free physics as the selector model, success {ci_pp(s['nom_speed'][DS])}, drift "
+        f"{s['nom_speed'][DD]}. On that grid the open-loop evidence meets the adoption rule (success holds, drift falls). Two things keep it off by default. "
+        f"(1) With the 2 km/h grid that D11 ships and the app uses, the learned selector's open-loop success falls from {s['fine_off']} to {s['fine_on']} "
+        "(<code>results/speed_control_eval.md</code>, band 0.25, single draw, no CI). (2) There is no closed-loop evidence with a CI: the only closed-loop run is a pilot "
+        f"(med mismatch, 4 presets, 3 seeds, no CI) in which the fast loop met <i>C</i><sub>req</sub> in {s['pilot_on']} of segments with speed control against {s['pilot_off']} "
+        f"without, at {s['pilot_gpa_on']} against {s['pilot_gpa_off']} GPA, too small to support a conclusion. A paired 20-seed closed-loop run on the shipped grid would settle it.</p>")
     Dm, Dd, Dg = "d frac_met", "d drift", "d GPA"
     b = {
         "nom_h": pick(ol_nom, variant="height"), "spr_h": pick(ol_spr, variant="height"),
@@ -639,14 +647,18 @@ def speed_boom_parts() -> tuple[str, str, dict]:
         "<p><b>Design (D12, schema 1.2).</b> <code>Setting.boom_height_m</code> is optional and combinable with speed. Candidate heights lie inside the spec range "
         "(0.30&ndash;0.75 m), within &plusmn;25% of the canopy-following set point, and above a per-family minimum from fan overlap, "
         "<i>H</i> &ge; 1.3&middot;<i>S</i>/(2 tan(&theta;/2)), because the uniform-field simulator does not model striping at low height. Default off.</p>"
-        f"<p><b>Result: the drift benefit exists in the simulator, but the selector's models do not realize it.</b> In the open loop, height control alone "
-        f"<i>raises</i> drift (nominal model {b['nom_h'][DD]}, learned {b['spr_h'][DD]}) at unchanged success: the selector uses the extra freedom to cut volume "
-        f"({b['nom_h']['mean GPA']} against {pick(ol_nom, variant='off')['mean GPA']} GPA, nominal). In the closed loop (<code>oracle_nominal</code> model, perfect verifier, "
-        f"4 presets &times; 10 seeds) the fast loop with height control meets <i>C</i><sub>req</sub> less often ({ci_pp(b['fast_med_height'][Dm])} med, {ci_pp(b['fast_high_height'][Dm])} high), and "
-        f"speed + height loses more ({ci_pp(b['fast_med_speed+height'][Dm])}, {ci_pp(b['fast_high_speed+height'][Dm])}) while lowering volume ({ci_r(b['fast_med_speed+height'][Dg])}, "
-        f"{ci_r(b['fast_high_speed+height'][Dg])} GPA) and drift ({b['fast_med_speed+height'][Dd]}, {b['fast_high_speed+height'][Dd]}). With the fair oracle, height alone cuts drift "
-        f"({b['oracle_med_height'][Dd]} med, {b['oracle_high_height'][Dd]} high) with no detectable loss in success ({ci_pp(b['oracle_med_height'][Dm])}, {ci_pp(b['oracle_high_height'][Dm])}). "
-        "So the limit is the model's prediction of the height effect, not the physics. Default stays off.</p>")
+        f"<p><b>Result: no benefit with the deployable models; default off.</b> In the no-mismatch open loop, height control alone "
+        f"<i>raises</i> drift (nominal model {b['nom_h'][DD]}, learned {b['spr_h'][DD]}) at unchanged success. Here the nominal model is the simulator's own expected physics, "
+        f"so this is not a misprediction: the selector's &lambda; trade-off spends the height freedom on volume ({b['nom_h']['mean GPA']} against "
+        f"{pick(ol_nom, variant='off')['mean GPA']} GPA, nominal). Speed + height in the open loop lowers drift (nominal {b['nom_sh'][DD]}, learned {b['spr_sh'][DD]}), but success "
+        f"falls with the nominal model ({ci_pp(b['nom_sh'][DS])}) and is unclear with the learned one ({ci_pp(b['spr_sh'][DS])}). In the closed loop (<code>oracle_nominal</code> model, "
+        f"perfect verifier, 4 presets &times; 10 seeds) the fast loop with height control meets <i>C</i><sub>req</sub> less often ({ci_pp(b['fast_med_height'][Dm])} med, "
+        f"{ci_pp(b['fast_high_height'][Dm])} high); speed + height loses more ({ci_pp(b['fast_med_speed+height'][Dm])}, {ci_pp(b['fast_high_speed+height'][Dm])}) while lowering "
+        f"volume ({ci_r(b['fast_med_speed+height'][Dg])}, {ci_r(b['fast_high_speed+height'][Dg])} GPA); its drift change is {b['fast_med_speed+height'][Dd]} at med (CI includes 0) "
+        f"and {b['fast_high_speed+height'][Dd]} at high. With the fair oracle, which knows the hidden mismatch, height alone cuts drift ({b['oracle_med_height'][Dd]} med, "
+        f"{b['oracle_high_height'][Dd]} high) with no detectable loss in success ({ci_pp(b['oracle_med_height'][Dm])}, {ci_pp(b['oracle_high_height'][Dm])}). "
+        "The drift benefit therefore appears only with the fair oracle under mismatch; with the nominal and learned models the selector spends height mainly on volume. "
+        "The data do not isolate the cause beyond that.</p>")
     rows = [[r["policy/mismatch/variant"], r["frac_met"], r["GPA"], r["drift"], r[Dm], r[Dd], r[Dg]] for r in cl]
     boom += ('<div class="caption"><b>Table #boom.</b> Boom height and travel speed in the closed loop (<code>oracle_nominal</code> model, perfect verifier, '
              '4 presets &times; 10 seeds; differences vs <code>off</code> with 95% paired-bootstrap CIs; <code>oracle</code> = fair oracle). '
@@ -752,7 +764,7 @@ def hybrid_parts() -> tuple[str, dict]:
         f"{pct(float(h['sel_spray']))}%.</p>"
         f"<p><b>In the closed loop the hybrid is not better than pure ML.</b> With med + high mismatch (20 seeds, noisy verifier; fair oracle met {h['oracle_met']} at {h['oracle_gpa']} GPA) "
         f"the hybrid on a wrong base is {h['dmet_rng']} pp below <code>SprayModel</code> in every policy (CIs exclude zero) at {h['dvol_rng']}% less volume. Its gap recovery with "
-        f"<code>fast_slow</code>, {h['hyb_fast_slow']['gap recovery']}, is statistically equal to <code>SprayModel</code>'s {h['spray_fast_slow']['gap recovery']} and meets the proposal "
+        f"<code>fast_slow</code>, {h['hyb_fast_slow']['gap recovery']}, is not distinguishable from <code>SprayModel</code>'s {h['spray_fast_slow']['gap recovery']} (overlapping CIs; not tested paired) and meets the proposal "
         f"criterion ({h['hyb_fast_slow']['volume vs oracle']} volume). Misspecified physics alone collapses in the open loop ({met(h['phys_open'])} met against {met(h['hyb_open'])} for the hybrid) "
         f"but reaches {met(h['phys_fast_slow'])} after five passes of the slow loop, by spraying {h['phys_fast_slow']['volume vs oracle']} more than the fair oracle: the slow-loop offset absorbs "
         f"a smooth physics bias. The exact-base hybrid, the circular upper bound, is not better than <code>SprayModel</code> either ({h['hybx_fast_slow']['Δ met vs spray (pp)']} pp with "
@@ -831,9 +843,10 @@ def scorecard(mp, sel, ver, cl, sb, fc, hy, n_sim_tests) -> list[dict]:
     s, b = sb["s"], sb["b"]
     DD, DS = "d drift vs off [95% CI]", "d success vs off [95% CI]"
     add("Extension: travel speed (D11)", "No proposal target. Adopt by default only if success holds and drift or volume falls.",
-        f"200 paired scenarios, learned selector: success {ci_pp(s['spr_speed'][DS])}, drift {s['spr_speed'][DD]}; nominal: success {ci_pp(s['nom_speed'][DS])}, drift "
-        f"{s['nom_speed'][DD]}. Closed-loop pilot (3 seeds, no CI): fast met {s['pilot_off']} to {s['pilot_on']}.",
-        "neg", "`results/boom_control_eval.md` (`speed` variant); `results/speed_control_eval.md`")
+        f"Coarse grid ({s['boom_grid'].replace('&ndash;', '-')}), 200 paired scenarios, learned selector: success {ci_pp(s['spr_speed'][DS])}, drift {s['spr_speed'][DD]}; "
+        f"nominal: success {ci_pp(s['nom_speed'][DS])}, drift {s['nom_speed'][DD]}. Shipped 2 km/h grid, open loop, learned: success {s['fine_off']} to {s['fine_on']} "
+        f"(single draw, no CI). Closed loop: pilot only (3 seeds, no CI), fast met {s['pilot_off']} to {s['pilot_on']}. Not adopted: no closed-loop CI.",
+        "incon", "`results/boom_control_eval.md` (`speed` variant); `results/speed_control_eval.md`")
     add("Extension: boom height (D12)", "No proposal target. Same adoption rule.",
         f"Open loop, height alone: drift {b['spr_h'][DD]} (learned). Closed loop, fast, speed+height: met {ci_pp(b['fast_med_speed+height']['d frac_met'])} (med), "
         f"{ci_pp(b['fast_high_speed+height']['d frac_met'])} (high), GPA {ci_r(b['fast_med_speed+height']['d GPA'])} (med). Fair oracle, height alone: drift "
@@ -950,7 +963,7 @@ def summary_text(mp, sel, ver, cl, n_open) -> str:
         f"({cl['c_fs_vol']}), because that oracle sees noise no controller can know. The model ({mp['lgb_rand_mae']} pp MAE, ridge {mp['ridge_rand_mae']} pp), the selector "
         f"({pct(c['selector']['success'])}% success at lower drift than the matched fixed setting) and card reading on our own cards (B0 {f(b0r['mae_pp'])} pp, B1 {f(b1r['mae_pp'])} pp MAE) "
         f"meet their targets. On out-of-generator cards B1 drops to {f(b1s['mae_pp'])} pp and {pct(b1s['class_agreement'])}% class agreement (target 90%), and the real-card "
-        "criterion is blocked by restricted data. Four extensions were tested and none is adopted by default: travel speed lowers drift slightly without raising success, "
+        "criterion is blocked by restricted data. Four extensions were tested and none is adopted by default: travel speed is inconclusive (a small open-loop drift gain, no closed-loop CI), "
         "boom height (alone or with speed) trades success for drift and volume, "
         "a wind forecaster lowers forecast error but not coverage failures, and a physics-first hybrid predictor is not better than pure ML in the loop. "
         f"All results are simulator-internal. {n_open}")
@@ -996,7 +1009,7 @@ def build(do_pdf: bool = True) -> None:
         "app_block": app_html,
         "scorecard_table": scorecard_html(S),
         "n_met": str(counts["met"]), "n_rows": str(len(S)), "n_partial": str(counts["partial"]), "n_missed": str(counts["missed"]),
-        "n_blocked": str(counts["blocked"]), "n_neg": str(counts["neg"]), "n_pending": str(counts["pending"]),
+        "n_blocked": str(counts["blocked"]), "n_neg": str(counts["neg"]), "n_incon": str(counts["incon"]), "n_pending": str(counts["pending"]),
         "neg_list": "".join(f"<li>{_cell(x)}</li>" for x in neg),
         "ai_log_rows": str(n_ai), "ai_log_table": ai_table, "n_decisions": str(n_decisions()),
         "fs_rec": cl["fs_rec"], "fs_vol": cl["fs_vol"], "fair_over_card": cl["fair_over_card"],
@@ -1048,7 +1061,8 @@ def write_scorecard_md(S, neg) -> None:
         "(`Docs/CoverageVisionAI_Project_Proposal (1).pdf`). All results are simulator-internal. The fair oracle (`oracle`: knows the hidden mismatch, not the per-card "
         "spread factor) is the reference; the card-aware oracle (`oracle_card`) is reported only as an unreachable bound. Brackets are 95% paired-bootstrap CIs.",
         "",
-        "Status: met / missed / partial / blocked (outside dependency) / done-negative (extension evaluated, not adopted) / pending (input not yet received).",
+        "Status: met / missed / partial / blocked (outside dependency) / done-negative (extension evaluated, negative result, not adopted) / "
+        "inconclusive, not adopted (evidence too weak either way) / pending (input not yet received).",
         "",
         "| Criterion | Target | Result | Status | Source |",
         "|---|---|---|---|---|",

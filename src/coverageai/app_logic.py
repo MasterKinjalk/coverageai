@@ -223,23 +223,30 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                   and not hasattr(mods.verifier, "measure_outcome"))
     if policy == "best_fixed" and fixed_setting is None:
         fixed_setting = best_fixed_for(mods, conds, c_req)
+    # Validate everything that can raise BEFORE touching the (st.cache_resource-shared) selector;
+    # then mutate inside the try so the finally always restores, even on a partial failure.
+    fc = _make_forecaster(forecaster) if policy in FORECAST_POLICIES else None
     old_lam = getattr(sel, "lam", None)
-    if lam is not None and old_lam is not None:
-        sel.lam = float(lam)
     inner = sel.inner if isinstance(sel, RecordingSelector) else sel
-    saved_opts: dict[str, Any] = {}
+    opt_grids: list[tuple[str, Any]] = []
     for on, attr, grid, what in ((speed_control, "speed_options_kmh", SPEED_OPTIONS_KMH, "travel-speed"),
                                  (boom_control, "boom_height_options_m", BOOM_HEIGHT_OPTIONS_M, "boom-height")):
         if on:
             if not hasattr(inner, attr):
                 raise ValueError(f"this selector does not support {what} control")
-            saved_opts[attr] = getattr(inner, attr)
-            setattr(inner, attr, list(grid))
-    fc = _make_forecaster(forecaster) if policy in FORECAST_POLICIES else None
+            opt_grids.append((attr, grid))
+    saved_opts: dict[str, Any] = {}
+    lam_set = False
     t0 = time.perf_counter()
     meta: dict = {}
     run_seed = int(seed)
     try:
+        if lam is not None and old_lam is not None:
+            sel.lam = float(lam)
+            lam_set = True
+        for attr, grid in opt_grids:
+            saved_opts[attr] = getattr(inner, attr)
+            setattr(inner, attr, list(grid))
         if policy == "fast_slow":
             run_seed, passes = _learn_between_passes(mods, conds, int(seed), mismatch,
                                                      float(c_req), int(n_learn), forecaster=fc)
@@ -250,7 +257,7 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                         pass_id or f"{policy}_s{run_seed}", render=vision,
                         fixed_setting=fixed_setting, forecaster=fc)
     finally:
-        if lam is not None and old_lam is not None:
+        if lam_set:
             sel.lam = old_lam
         for attr, old in saved_opts.items():
             setattr(inner, attr, old)
@@ -282,6 +289,22 @@ def _pass_summary(i: int, logs: Sequence, c_req: float, model, displayed: bool =
             "displayed": displayed}
 
 
+def _verified_records(logs: Sequence) -> list[tuple[Conditions, Setting, Outcome]]:
+    """Slow-loop training records for ``logs``, built exactly like ``loop.run_passes_slow``:
+    measured coverage (and measured stains if available), other outcome fields from the
+    simulator, and the point-forecast wind (``extra["fc_wind_ms"]``) as the conditions when a
+    forecaster was on, else the nominal ``lg.x``."""
+    recs = []
+    for lg in logs:
+        o = lg.outcome
+        stains = lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None else o.stains_per_cm2
+        x_rec = (lg.x if "fc_wind_ms" not in lg.extra
+                 else dataclasses.replace(lg.x, wind_speed_ms=lg.extra["fc_wind_ms"]))
+        recs.append((x_rec, lg.u, Outcome(lg.meas.coverage_pct, o.deposition_ul_cm2,
+                                          o.drift_frac, o.displacement_mm, stains, None)))
+    return recs
+
+
 def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int, mismatch: str,
                           c_req: float, n_learn: int, forecaster=None) -> tuple[int, list[dict]]:
     """Slow loop: ``n_learn`` passes (no rendering) through ``run_passes_slow``, then one
@@ -302,10 +325,7 @@ def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int,
             passes[-1]["slow_offset_pp"] = float(by_pass[i][0].extra.get("slow_global_corr", 0.0))
         # run_passes_slow does not refit after its last pass: do it here
         last = by_pass[max(by_pass)]
-        corr.fit([(lg.x, lg.u, Outcome(lg.meas.coverage_pct, lg.outcome.deposition_ul_cm2,
-                                       lg.outcome.drift_frac, lg.outcome.displacement_mm,
-                                       lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None
-                                       else lg.outcome.stains_per_cm2, None)) for lg in last])
+        corr.fit(_verified_records(last))
     mods.model = corr
     return seed + 1009 * n_learn, passes
 

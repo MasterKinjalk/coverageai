@@ -44,7 +44,7 @@
   td code, th code { font-size: 0.93em; }
   .st { font-family:"Segoe UI",Arial,sans-serif; font-weight:700; font-size: 7.8pt; white-space: nowrap; }
   .st.met { color: var(--met); } .st.missed { color: var(--risk); } .st.partial { color: var(--part); }
-  .st.blocked { color: var(--risk); } .st.neg { color: var(--neg); } .st.pending { color: var(--pend); }
+  .st.blocked { color: var(--risk); } .st.neg { color: var(--neg); } .st.incon { color: var(--part); } .st.pending { color: var(--pend); }
   .pendbox { border: 1pt dashed #8a8a8a; background: #f3f3f3; padding: 5pt 8pt; margin: 3pt 0 6pt; font-size: 9pt; color:#333; break-inside: avoid; }
   .pendbox b { font-family:"Segoe UI",Arial,sans-serif; color: #6b6b6b; letter-spacing: .02em; }
   .confirm { background:#fff2b3; padding: 0 2pt; font-family:"Segoe UI",Arial,sans-serif; font-size: 7.8pt; font-weight:700; color:#7a5a00; }
@@ -198,7 +198,7 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 </div>
 
 <h2>5 Extensions</h2>
-<p>Four extensions beyond the proposal were built as opt-in options and evaluated with the same protocol (paired comparisons on the same seeds, 95% paired-bootstrap CIs, fair oracle as reference). None is adopted by default.</p>
+<p>Four extensions beyond the proposal were built as opt-in options and evaluated with paired comparisons on the same seeds and 95% paired-bootstrap CIs. None is adopted by default: three are negative results, and travel speed is inconclusive.</p>
 <h3>5.1 Travel speed as a controlled setting</h3>
 {{speed_block}}
 <h3>5.2 Boom height as a controlled setting</h3>
@@ -209,7 +209,7 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 {{hybrid_block}}
 
 <h2>6 Final Scorecard</h2>
-<p>@tab:score lists every success criterion of the proposal (Table 1, targets quoted verbatim; the verification criterion is split into its parts) and the four extensions. Of {{n_rows}} rows, {{n_met}} are met, {{n_partial}} partial, {{n_missed}} missed, {{n_blocked}} blocked by data access, {{n_neg}} are extensions evaluated with a negative result and {{n_pending}} wait for an input. The same table, as text, is in <code>results/scorecard.md</code>. <span class="st met">met</span>: target satisfied (inside the simulator); <span class="st partial">partial</span>: some sub-targets met; <span class="st missed">missed</span>; <span class="st blocked">blocked</span>: outside dependency; <span class="st neg">done-negative</span>: evaluated, not adopted.</p>
+<p>@tab:score lists every success criterion of the proposal (Table 1, targets quoted verbatim; the verification criterion is split into its parts) and the four extensions. Of {{n_rows}} rows, {{n_met}} are met, {{n_partial}} partial, {{n_missed}} missed, {{n_blocked}} blocked by data access, {{n_neg}} are extensions evaluated with a negative result, {{n_incon}} is an extension with inconclusive evidence, and {{n_pending}} wait for an input. The same table, as text, is in <code>results/scorecard.md</code>. <span class="st met">met</span>: target satisfied (inside the simulator); <span class="st partial">partial</span>: some sub-targets met; <span class="st missed">missed</span>; <span class="st blocked">blocked</span>: outside dependency; <span class="st neg">done-negative</span>: evaluated, negative result, not adopted; <span class="st incon">inconclusive, not adopted</span>: evidence too weak either way.</p>
 <div class="caption"><b>Table #score.</b> Final scorecard. Fair oracle = reference; card-aware oracle = unreachable bound. Brackets are 95% paired-bootstrap CIs.</div>
 {{scorecard_table}}
 
