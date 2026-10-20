@@ -61,19 +61,22 @@ uv run streamlit run app/main.py          # demo app, http://localhost:8501
 uv run pytest -q                          # tests
 uv run python -m coverageai.e2e --smoke   # end-to-end smoke pass
 uv run python -m coverageai.e2e --real --model spray --verifier b1
+uv run --no-sync python reports/final/build.py   # final report (html + pdf) and results/scorecard.md
 ```
 
 Experiments (each writes `results/<name>.json` + `.md`, figures in `experiments/figures/`):
 
 | Script | What |
 |---|---|
-| `experiments/closed_loop.py` | main closed-loop result: open / fast / fast+slow vs fair and card-aware oracles, 20 seeds |
+| `experiments/closed_loop.py` | main closed-loop result: open / fast / fast+slow vs fair and card-aware oracles, 20 seeds (`results/closed_loop_summary.md`) |
 | `experiments/eval_selector.py` | selector success / drift / volume on no-mismatch scenarios |
-| `experiments/eval_verifiers.py` | B0 vs B1 card reading on renderer and Simões cards |
-| `experiments/eval_speed_control.py`, `eval_boom_control.py` | travel speed and boom height as optional controlled settings |
-| `experiments/eval_forecast.py` | short-horizon wind forecaster (**full run still pending**, see `Docs/NEXT_STEPS.md`) |
-| `experiments/eval_hybrid.py` | physics + learned residual predictor (**full closed-loop stage pending**) |
+| `experiments/eval_verifiers.py` | B0 vs B1 card reading on renderer and Simões cards (`results/verification_summary.md`) |
+| `experiments/eval_speed_control.py`, `eval_boom_control.py` | travel speed and boom height as optional controlled settings (`results/boom_control_eval.md`, verdict at the top) |
+| `experiments/eval_forecast.py` | short-horizon wind forecaster, 20 seeds (`results/forecast_eval.md`; negative result) |
+| `experiments/eval_hybrid.py` | physics + learned residual predictor, offline / selector / 20-seed closed loop (`results/hybrid_eval.md`) |
 | `experiments/slow_loop_diagnostic.py` | slow-loop residuals per pass |
+
+All criteria and extensions in one table: `results/scorecard.md` (written by `reports/final/build.py`).
 
 Most experiments take `--workers N`; on a big machine raise it (the laptop runs used 4 to 7). U-Net training on GPU: `Docs/gpu_training.md` or `notebooks/train_unet_gpu.ipynb`.
 
@@ -97,11 +100,12 @@ config/spec.yaml     all parameters, ranges and selector options
 experiments/         evaluation scripts and figures
 results/             experiment outputs (json, md, csv)
 reports/midterm/     midterm report (build.py -> html/pdf)
+reports/final/       final report (build.py -> html/pdf, also writes results/scorecard.md)
 Docs/                proposal, specs, decisions log, GPU training guide, NEXT_STEPS.md
 tests/               pytest suite
 ```
 
 ## Known issues
 
-* On the Windows laptop, three tests that write parquet fail with a pyarrow DLL error (`test_smoke_pass`, `test_e2e_run_real_writes_logs`, `test_logs_frame_and_save`). They are expected to pass on Linux.
+* On the old Windows laptop, three tests that write parquet failed with a pyarrow DLL error (`test_smoke_pass`, `test_e2e_run_real_writes_logs`, `test_logs_frame_and_save`). This was laptop-specific: on the new Windows 11 machine the full suite (394 tests) passes.
 * Timing tests (`test_render_time_under_one_second_worst_case`) can fail when the machine is busy.

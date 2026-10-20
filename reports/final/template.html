@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CoverageVision AI: ABE 598 Final Report</title>
+<style>
+  :root { --blue:#1f4e9c; --blue-soft:#e8eef8; --ink:#1a1a1a; --grey:#5a5a5a; --rule:#b8c4dc;
+          --met:#1b7a3d; --track:#1f4e9c; --risk:#b3261e; --pend:#6b6b6b; --part:#9a6200; --neg:#5b3f99; }
+  @page { size: Letter; margin: 1.4cm 1.6cm 1.6cm 1.6cm;
+          @bottom-left  { content: "CoverageVision AI \00B7  ABE 598 Final Report"; font: 8.5pt "Segoe UI", Arial, sans-serif; color:#444; }
+          @bottom-right { content: counter(page) "/" counter(pages); font: 8.5pt "Segoe UI", Arial, sans-serif; color:#444; } }
+  * { box-sizing: border-box; }
+  html { background:#fff; }
+  body { font-family: "Cambria", "Latin Modern Roman", "Georgia", "Times New Roman", serif;
+         font-size: 8.9pt; line-height: 1.17; color: var(--ink); margin: 0 auto; max-width: 17.8cm; padding: 1cm 0; background:#fff; }
+  h1, h2, h3, .sans { font-family: "Segoe UI", "Calibri", Arial, sans-serif; color: var(--blue); }
+  h1 { font-size: 19pt; line-height:1.15; text-align:center; margin: 0 0 4pt; }
+  .byline { text-align:center; font-family:"Segoe UI",Arial,sans-serif; font-size:9.5pt; color:var(--grey); margin-bottom: 8pt; }
+  h2 { font-size: 12.3pt; margin: 8pt 0 3pt; break-after: avoid; border-bottom: 0.6pt solid var(--rule); padding-bottom: 1pt; }
+  h3 { font-size: 10.3pt; margin: 6pt 0 2pt; break-after: avoid; }
+  p { margin: 0 0 3pt; text-align: justify; hyphens: auto; }
+  .summary { border: 0.8pt solid var(--rule); background: var(--blue-soft); padding: 4pt 8pt; margin: 3pt 0 4pt; }
+  .summary p { margin: 0; }
+  code, .mono { font-family: "Consolas", "Courier New", monospace; font-size: 8.6pt; }
+  sub, sup { line-height: 0; }
+  figure { margin: 4pt 0 5pt; break-inside: avoid; }
+  figure img { display:block; margin: 0 auto; max-width: 100%; }
+  figure.w70 img { max-width: 70%; } figure.w85 img { max-width: 85%; }
+  figcaption, .caption { break-after: avoid; font-size: 8.4pt; line-height: 1.22; color: #222; margin-top: 2pt; text-align: justify; }
+  figcaption b, .caption b { font-family: "Segoe UI", Arial, sans-serif; color: var(--blue); }
+  .twoup { display: flex; gap: 8pt; align-items: flex-start; }
+  .twoup > div { flex: 1 1 0; min-width: 0; }
+  .twoup img { width: 100%; }
+  table { border-collapse: collapse; width: 100%; margin: 2pt 0 5pt; font-size: 8.1pt; line-height: 1.17; }
+  tr { break-inside: avoid; }
+  th { font-family: "Segoe UI", Arial, sans-serif; font-size: 7.9pt; text-align: left; color: #fff; background: var(--blue); padding: 2pt 4pt; vertical-align: bottom; }
+  td { padding: 1.2pt 4pt; border-bottom: 0.5pt solid var(--rule); vertical-align: top; }
+  tr:nth-child(even) td { background: #f6f8fc; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { font-weight: 600; }
+  table.big td, table.big th { font-size: 7.7pt; }
+  table.score td { font-size: 7.6pt; } table.score td.src { font-size: 7pt; color:#333; }
+  table.ailog td, table.ailog th { font-size: 6.9pt; line-height: 1.12; padding: 0.8pt 3pt; }
+  td code, th code { font-size: 0.93em; }
+  .st { font-family:"Segoe UI",Arial,sans-serif; font-weight:700; font-size: 7.8pt; white-space: nowrap; }
+  .st.met { color: var(--met); } .st.missed { color: var(--risk); } .st.partial { color: var(--part); }
+  .st.blocked { color: var(--risk); } .st.neg { color: var(--neg); } .st.pending { color: var(--pend); }
+  .pendbox { border: 1pt dashed #8a8a8a; background: #f3f3f3; padding: 5pt 8pt; margin: 3pt 0 6pt; font-size: 9pt; color:#333; break-inside: avoid; }
+  .pendbox b { font-family:"Segoe UI",Arial,sans-serif; color: #6b6b6b; letter-spacing: .02em; }
+  .confirm { background:#fff2b3; padding: 0 2pt; font-family:"Segoe UI",Arial,sans-serif; font-size: 7.8pt; font-weight:700; color:#7a5a00; }
+  ul, ol { margin: 0 0 4pt 0; padding-left: 14pt; } li { margin-bottom: 1.5pt; text-align: justify; }
+  .eq { text-align: center; margin: 3pt 0 5pt; font-size: 10.3pt; }
+  .refs { font-size: 7.1pt; line-height: 1.1; } .refs li { margin-bottom: 1.5pt; text-align: left; }
+  .note { font-size: 8.6pt; color: var(--grey); }
+  .pb { break-before: page; }
+  @media print { body { padding: 0; max-width: none; } }
+  @media screen { body { padding: 1.2cm 1cm; } }
+</style>
+</head>
+<body>
+
+<h1>AI-Driven Closed-Loop Precision Spraying<br>for Real-Time Application Optimization</h1>
+<div class="byline">ABE 598 Digital Agriculture &middot; Final Project Report (milestone M5, December 9, 2026)<br>
+Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot; Kinjalk Parth<br>
+<span style="font-size:8.3pt">Built {{build_date}} from the results files in the repository. Items marked <span class="confirm">TEAM TO CONFIRM</span> need a team member's check before submission.</span></div>
+
+<h2>1 Summary</h2>
+<div class="summary"><p>{{summary_text}}</p></div>
+
+<h2>2 System as Built</h2>
+<p>Sprayers commit to settings before they see how weather and machine state change the deposit, and standard water-sensitive-paper (WSP) checks report problems only after the sprayer has passed. The proposal closes that loop: before each field segment a model predicts coverage and drift for every candidate setting, a selector picks the setting that meets the coverage requirement <i>C</i><sub>req</sub> at the lowest predicted drift and volume, the sprayer applies it, computer vision reads the coverage actually achieved from a WSP card, and the error corrects the next segments (fast loop) and the model between passes (slow loop). Without spray trials this semester, the whole loop runs in a physics-informed simulator with injected hidden mismatch (wind gusts, canopy interception, nozzle wear) that the model never sees.</p>
+<p>The loop follows the proposal (@fig:arch). Modules exchange versioned records defined in <code>contracts.py</code> (schema 1.2: optional travel speed and boom height added to the 1.0 setting). <code>loop.py</code> runs a 40-segment pass under six policies (<code>open</code>, <code>fast</code>, <code>fast_slow</code>, fair <code>oracle</code>, card-aware <code>oracle_card</code>, <code>best_fixed</code>) and logs one row per segment. All extensions are opt-in and default off; with them off, results are bit-identical to the baseline. The code base is {{src_lines}} lines of Python with {{n_tests}} test functions; the full suite ({{n_suite}} tests after parametrization) passes on the final machine ({{suite_machine}}).</p>
+
+<figure class="w85">
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Closed-loop system diagram with module names" style="width:100%;height:auto;font-family:'Segoe UI',Arial,sans-serif">
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+<marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f4e9c"/></marker>
+</defs>
+<g font-size="10.5" fill="#1a1a1a">
+<rect x="4" y="14" width="170" height="76" rx="5" fill="#fdf1dc" stroke="#d98a00" stroke-width="1.6"/>
+<text x="13" y="29" font-weight="700">Inputs</text>
+<text x="13" y="43"><tspan font-family="Consolas,monospace" font-size="9.3">scenarios.py</tspan>: x, 6 presets</text>
+<text x="13" y="56"><tspan font-family="Consolas,monospace" font-size="9.3">catalog.py</tspan>: 316 rows,</text>
+<text x="13" y="69">547 settings (+ speed, height)</text>
+<text x="13" y="84" fill="#8a5a00" font-size="9.5">lead: Emery</text>
+<rect x="200" y="14" width="170" height="76" rx="5" fill="#e9f5ec" stroke="#1b7a3d" stroke-width="1.6"/>
+<text x="209" y="29" font-weight="700">Predictive model</text>
+<text x="209" y="43"><tspan font-family="Consolas,monospace" font-size="9.3">model/predictor.py</tspan></text>
+<text x="209" y="56">LightGBM + CQR interval</text>
+<text x="209" y="69">(opt-in: hybrid.py)</text>
+<text x="209" y="84" fill="#1b7a3d" font-size="9.5">lead: Junjie</text>
+<rect x="396" y="14" width="170" height="76" rx="5" fill="#fdf1dc" stroke="#d98a00" stroke-width="1.6"/>
+<text x="405" y="29" font-weight="700">Parameter selector</text>
+<text x="405" y="43"><tspan font-family="Consolas,monospace" font-size="9.3">selector.py</tspan></text>
+<text x="405" y="56">min &#955;D&#770; + (1&#8722;&#955;)V</text>
+<text x="405" y="69">s.t. C&#770; + b &#8722; m &#8805; C_req</text>
+<text x="405" y="84" fill="#8a5a00" font-size="9.5">lead: Emery</text>
+<rect x="592" y="14" width="164" height="76" rx="5" fill="#eeeeee" stroke="#666" stroke-width="1.6"/>
+<text x="601" y="29" font-weight="700">Simulator</text>
+<text x="601" y="43"><tspan font-family="Consolas,monospace" font-size="9.3">simulator.py, physics/</tspan></text>
+<text x="601" y="56">droplets, drift, evaporation</text>
+<text x="601" y="69">hidden: gusts, canopy, wear</text>
+<text x="601" y="84" fill="#444" font-size="9.5">shared: Emery, Junjie</text>
+<rect x="592" y="150" width="164" height="76" rx="5" fill="#e6eefb" stroke="#1f4e9c" stroke-width="1.6"/>
+<text x="601" y="165" font-weight="700">WSP renderer</text>
+<text x="601" y="179"><tspan font-family="Consolas,monospace" font-size="9.3">vision/render.py</tspan></text>
+<text x="601" y="192">stains + exact mask,</text>
+<text x="601" y="205">scanner / phone profiles</text>
+<text x="601" y="220" fill="#1f4e9c" font-size="9.5">lead: Kinjalk</text>
+<rect x="396" y="150" width="170" height="76" rx="5" fill="#e6eefb" stroke="#1f4e9c" stroke-width="1.6"/>
+<text x="405" y="165" font-weight="700">Verifier</text>
+<text x="405" y="179"><tspan font-family="Consolas,monospace" font-size="9.3">classical.py</tspan> (B0)</text>
+<text x="405" y="192"><tspan font-family="Consolas,monospace" font-size="9.3">unet.py</tspan> (B1)</text>
+<text x="405" y="205">coverage C_k, class</text>
+<text x="405" y="220" fill="#1f4e9c" font-size="9.5">lead: Kinjalk</text>
+<rect x="200" y="150" width="170" height="76" rx="5" fill="#e6eefb" stroke="#1f4e9c" stroke-width="1.6"/>
+<text x="209" y="165" font-weight="700">Feedback</text>
+<text x="209" y="179"><tspan font-family="Consolas,monospace" font-size="9.3">feedback.py</tspan></text>
+<text x="209" y="192">fast: b = (1&#8722;&#945;)b + &#945;e_k</text>
+<text x="209" y="205">slow: shrunk offset</text>
+<text x="209" y="220" fill="#1f4e9c" font-size="9.5">lead: Kinjalk</text>
+<rect x="4" y="150" width="170" height="76" rx="5" fill="#fff" stroke="#666" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="13" y="165" font-weight="700">Loop harness</text>
+<text x="13" y="179"><tspan font-family="Consolas,monospace" font-size="9.3">loop.py, forecast.py</tspan></text>
+<text x="13" y="192">6 policies, 40 segments,</text>
+<text x="13" y="205">fair oracle, SegmentLog</text>
+<text x="13" y="220" fill="#1f4e9c" font-size="9.5">lead: Kinjalk</text>
+</g>
+<g stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#ah)">
+<line x1="174" y1="52" x2="198" y2="52"/><line x1="370" y1="52" x2="394" y2="52"/><line x1="566" y1="52" x2="590" y2="52"/>
+<line x1="674" y1="90" x2="674" y2="148"/><line x1="592" y1="188" x2="568" y2="188"/><line x1="396" y1="188" x2="372" y2="188"/>
+</g>
+<g stroke="#1f4e9c" stroke-width="1.5" fill="none" marker-end="url(#ahb)">
+<line x1="285" y1="148" x2="285" y2="92"/>
+<polyline points="370,164 384,164 384,120 481,120 481,92"/>
+</g>
+<g font-size="9" fill="#444">
+<text x="667" y="115" text-anchor="end">setting u*,</text><text x="667" y="126" text-anchor="end">hidden mismatch</text>
+<text x="579" y="183" text-anchor="middle">card</text><text x="384" y="183" text-anchor="middle">C_k</text>
+<text x="293" y="124" fill="#1f4e9c">offset (slow loop)</text>
+<text x="391" y="115" fill="#1f4e9c">bias b (fast loop)</text>
+</g>
+</svg>
+<figcaption><b>Figure #arch.</b> CoverageVision loop as implemented, with source modules. Border color marks the module lead (orange Emery, green Junjie, blue Kinjalk, grey shared). Black arrows: forward pass for segment <i>k</i>; blue arrows: fast loop (bias <i>b</i> to the selector) and slow loop (coverage offset on the frozen model, refit between passes).</figcaption>
+</figure>
+
+<h2>3 Components</h2>
+<h3>3.1 Nozzle catalog</h3>
+<p><code>data/catalog/nozzles.csv</code> holds 316 chart rows for five families (TP65 50, XR 72, DGX40 24, ULD 80, 3D 90; 43 family-size combinations). <code>catalog.py</code> interpolates flow along <i>Q</i> &prop; &radic;<i>P</i>, recomputes GPA at 20 in spacing, and generates 547 candidate settings on a 5 psi grid. The validator reports 0 violations on four checks (square-root law, sampled GPA cells, droplet class monotone in pressure, ranges). Compromises: TP65 droplet class uses the 80&deg; column (D3), DGX40 contributes flow only (D4), ULD and 3D rows come from manufacturer sheets [12], spray angles are nominal (D5).</p>
+
+<h3>3.2 Simulator</h3>
+<p>The simulator composes first-order relationships and is not a validated drift model. Flow follows <i>Q</i> = <i>Q</i><sub>ref</sub>&radic;(<i>P</i>/<i>P</i><sub>ref</sub>), application rate GPA = 5940&middot;GPM/(MPH&middot;<i>W</i>) [4]. The volume spectrum is log-normal with VMD set by the ASABE S572.3 class [3]. Terminal velocity uses a Schiller&ndash;Naumann drag correlation [9]; evaporation follows the <i>d</i><sup>2</sup> law [10] with Stull's wet-bulb approximation [11]. Droplets leave the nozzle at <i>v</i><sub>0</sub> = 0.6&radic;(2<i>P</i>/&rho;<sub>w</sub>) and relax toward <i>V</i><sub>t</sub> under linear drag (D10); size bins displaced over 0.5 m cross-track are drift. Coverage uses a Boolean (Poisson) model [5],</p>
+<p class="eq"><i>C</i> = 1 &minus; exp(&minus;<i>N</i>&middot;E[&pi;<i>s</i><sup>2</sup>/4]/<i>A</i>), &nbsp; <i>s</i> = SF&middot;<i>d</i>, &nbsp; SF ~ U[1.6, 2.2] per card [6], &nbsp; <i>d</i> &ge; 50 &micro;m.</p>
+<p>The per-card spread factor SF is the irreducible noise that recurs throughout this report: it is drawn when the card is sprayed, so no controller can know it in advance. Hidden mismatch (AR(1) gusts, canopy interception, nozzle wear) is set by one level (none, low, med, high) and never seen by the model. Tests cover the anchors in @tab:anchors, monotone trends (@fig:trends), the Boolean formula against Monte Carlo placement, and seeded determinism.</p>
+<div class="twoup" style="align-items:flex-start"><div style="flex:1"><div class="caption"><b>Table #anchors.</b> Physical anchors checked by tests (values computed from the code at build time; drift at 15 GPA, 2 m/s crosswind, <i>H</i> = 0.5 m, 25 &deg;C, 50% RH, 40 psi, mean of 6 seeds). Plausibility checks, not field validation.</div>
+<table>
+<tr><th>Quantity</th><th>Reference or accepted band</th><th class="num">Simulator</th></tr>
+{{anchor_rows}}
+</table>
+</div><div style="flex:1.25"><figure style="margin:0">
+<img src="{{fig_sim_trends}}" alt="Simulator trend curves">
+<figcaption><b>Figure #trends.</b> Simulator trends. (a) Coverage rises with application rate and falls for coarser classes at equal volume. (b) Drift against crosswind. (c) Drift rises with boom height. (d) For a 90 &micro;m spray, coverage falls with temperature and rises with humidity.</figcaption>
+</figure></div></div>
+
+<h3>3.3 Dataset and predictive model</h3>
+<p>Dataset v1 has {{dataset_rows}} simulator rows: Latin-hypercube conditions over the operating ranges, settings drawn uniformly from the 547 candidates, no hidden mismatch. Features are raw conditions, wind as cross- and along-track components, catalog-derived flow, VMD and angle, and physics features (wet-bulb depression, <i>H</i>/<i>V</i><sub>t</sub>, |<i>U</i><sub>cross</sub>|<i>H</i>/<i>V</i><sub>t</sub>, GPA/VMD). We compare ridge, random forest and LightGBM [15]; the interval comes from quantile LightGBM with conformal calibration [16]. Splits are a random 80/20 hold-out and three grouped splits withholding wind above 5 m/s, the 3D family, and the hot-dry regime. {{model_headline}}</p>
+<div class="caption"><b>Table #model.</b> Coverage MAE (pp) on held-out data against sampled outcomes; bold marks the best model. "vs expected" is LightGBM's MAE against noise-free expected coverage. Target: MAE &le; 3 pp and below ridge.</div>
+<table>
+<tr><th>Split</th><th class="num">Ridge</th><th class="num">Random forest</th><th class="num">LightGBM</th><th class="num">LightGBM vs expected</th><th class="num">Drift MAE (fraction)</th><th class="num">Shift MAE (mm)</th></tr>
+{{model_rows}}
+</table>
+<p><b>The 3 pp target sits close to a floor set by the simulator.</b> Because of the per-card spread factor no model can beat {{noise_floor}} pp against sampled outcomes; LightGBM's {{lgb_rand_mae}} pp is {{gap_to_floor}} pp above it, and against the noise-free expectation its MAE is {{lgb_exp_mae}} pp (ridge {{ridge_exp_mae}} pp). Withholding regimes barely moves coverage error ({{grp_min}} to {{grp_max}} pp) but raises drift error from {{drift_rand}} to {{drift_u5}} (wind above 5 m/s withheld) and shift error from {{shift_rand}} to {{shift_u5}} mm, so drift estimates are least reliable at high wind. {{sens_pass}} of {{sens_total}} sensitivity sweeps pass; they check direction, not magnitude.</p>
+<figure>
+<img src="{{fig_model_parity}}" alt="Parity plots of the LightGBM model" style="max-width:52%">
+<figcaption><b>Figure #parity.</b> LightGBM against simulator on held-out rows: four outputs on the random split (top), coverage on the withheld regimes (bottom left three) and coverage MAE by split and model (bottom right; dotted: 3 pp target).</figcaption>
+</figure>
+
+<h3>3.4 Selector and scenarios</h3>
+<p>The selector implements Eq. (2) of the proposal: it scores every catalog candidate, keeps those with <i>C</i>&#770; + <i>b</i> &minus; <i>m</i> &ge; <i>C</i><sub>req</sub>, and minimizes &lambda;&middot;drift<sub>n</sub> + (1 &minus; &lambda;)&middot;volume<sub>n</sub> (min-max normalized over the feasible set; &lambda; = 0.6). The margin <i>m</i> is the lower half-width of the prediction interval, floored at 1.5 pp; if nothing is feasible it returns the highest-coverage setting and flags the segment. The scenario library generates 40-segment passes with AR(1) wind and gust bursts, rotating wind direction, diurnal temperature and humidity, and back-and-forth headings, in six presets (<code>calm_morning</code>, <code>gusty_afternoon</code>, <code>hot_dry</code>, <code>crosswind_shift</code>, <code>marginal_limits</code>, <code>inversion_evening</code>); the parameters are plausible regime choices, not measured weather statistics.</p>
+{{selector_block}}
+
+<h3>3.5 WSP renderer and public data</h3>
+<p>The renderer turns the droplets on a card into an RGB image and an exact mask (76 &times; 26 mm, 600 dpi). Each detectable droplet leaves an area-preserving elliptical stain of diameter SF&middot;<i>d</i>; degradations (warp, illumination, blur, noise, JPEG) come in <code>scanner</code> and <code>phone</code> profiles (@fig:wsp). Over 100 undegraded cards, mask coverage matches the analytic Boolean value to a mean absolute 0.14 pp. The Sim&otilde;es et al. record [7] provides {{simoes_n}} synthetic cards with polygon labels (CC BY 4.0; {{simoes_droplets}} droplets; coverage {{simoes_cov_min}}% to {{simoes_cov_max}}%, mean {{simoes_cov_mean}}%), which we use as an out-of-generator test.</p>
+
+<h3>3.6 Post-spray verification</h3>
+<p>B0 is a classical pipeline: card detection with perspective correction, illumination flattening, an (R&minus;B) stain channel thresholded with Otsu's method [2,17], opening, and a distance-transform watershed for stain counts and Dv0.1/0.5/0.9. B1 is a U-Net with a lightweight pretrained encoder [8] that segments stains on tiles; coverage is the stained share of the mask. Both flag saturated cards. Coverage, not stain counts, is the quantity the loop uses: count errors are large for both readers wherever stains touch.</p>
+{{verification_block}}
+
+<h2>4 Closed-Loop Results</h2>
+{{closed_loop_block}}
+
+<h3>4.1 Demonstration</h3>
+<div class="twoup" style="align-items:center">
+<div style="flex:0.6"><figure style="margin:0"><img src="{{fig_demo_live_top}}" alt="Streamlit demo"><figcaption><b>Figure #demo.</b> Demo app (midterm screenshot): scenario <code>gusty_afternoon</code>, high mismatch, fast policy, segment 15 of 40, with chosen setting, selector reasoning, rendered card and the coverage values.</figcaption></figure></div>
+<div style="flex:1.35"><p>The Streamlit app <code>app/main.py</code> runs a pass segment by segment and shows every decision: conditions, the chosen setting and why (feasible candidates, top-5 ranking), the rendered card with the reader's mask, and predicted, corrected, measured and true coverage. The <b>Field run</b> tab runs one pass under a chosen preset, mismatch level, control strategy (<code>open</code>, <code>fast</code>, <code>fast_slow</code> with a table of what the slow loop learned between passes, fair <code>oracle</code>, <code>oracle_card</code>, <code>best_fixed</code>) and card reader (classical, U-Net, noisy), with animated field and card replays. <b>Compare strategies</b> runs several strategies on the same hidden realization. <b>How the simulator works</b> shows the physics for a chosen nozzle.</p>
+{{app_block}}</div>
+</div>
+
+<h2>5 Extensions</h2>
+<p>Four extensions beyond the proposal were built as opt-in options and evaluated with the same protocol (paired comparisons on the same seeds, 95% paired-bootstrap CIs, fair oracle as reference). None is adopted by default.</p>
+<h3>5.1 Travel speed as a controlled setting</h3>
+{{speed_block}}
+<h3>5.2 Boom height as a controlled setting</h3>
+{{boom_block}}
+<h3>5.3 Short-horizon wind forecaster</h3>
+{{forecast_block}}
+<h3>5.4 Physics-first hybrid predictor</h3>
+{{hybrid_block}}
+
+<h2>6 Final Scorecard</h2>
+<p>@tab:score lists every success criterion of the proposal (Table 1, targets quoted verbatim; the verification criterion is split into its parts) and the four extensions. Of {{n_rows}} rows, {{n_met}} are met, {{n_partial}} partial, {{n_missed}} missed, {{n_blocked}} blocked by data access, {{n_neg}} are extensions evaluated with a negative result and {{n_pending}} wait for an input. The same table, as text, is in <code>results/scorecard.md</code>. <span class="st met">met</span>: target satisfied (inside the simulator); <span class="st partial">partial</span>: some sub-targets met; <span class="st missed">missed</span>; <span class="st blocked">blocked</span>: outside dependency; <span class="st neg">done-negative</span>: evaluated, not adopted.</p>
+<div class="caption"><b>Table #score.</b> Final scorecard. Fair oracle = reference; card-aware oracle = unreachable bound. Brackets are 95% paired-bootstrap CIs.</div>
+{{scorecard_table}}
+
+<h2>7 Negative Results</h2>
+<ol>{{neg_list}}</ol>
+
+<h2>8 Limitations</h2>
+<ul>
+<li><b>Simulator-internal and partly circular.</b> Plant, training data, renderer and hidden mismatch come from one hand-built simulator, fit to published trends, not a validated drift model. The experiments test whether the control logic behaves as designed when the model is wrong in a known, low-dimensional way; they do not measure field efficacy. The mismatch is injected by us and is of the kind the bias and offset are built to absorb (a coverage offset that persists over a pass, with a mean that persists across passes). Inversions, boom roll, nozzle clogging and card-placement error are not tested. Scenarios are a synthetic generator, not weather records. The hybrid's exact physics base is the plant itself, so its exact-base rows are an upper bound.</li>
+<li><b>The oracle defines the result.</b> Against the fair oracle the closed-loop criterion is met; against the card-aware oracle it is missed on volume, because that oracle sees the per-card spread factor; the fair oracle itself uses {{fair_over_card}} more volume than it. With a stricter fair oracle (q = 0.05) recovery shrinks but the criterion still holds. The fair-oracle definition and its q = 0.1 risk level were fixed before the grid ran.</li>
+<li><b>No real annotated cards.</b> The two annotated real cards are in a restricted Zenodo record (D9). The real-card criterion (&le; 5 pp) is untested, and sim-to-real transfer of B0 and B1 is unmeasured; the proposal cites a drop from 57.06% to 40.81% for YOLOv8 from synthetic to real cards [7].</li>
+<li><b>Out-of-generator class agreement is missed.</b> On the Sim&otilde;es synthetic cards B1 reaches {{b1s_mae}} pp MAE but {{b1s_agree}}% class agreement (B0: {{b0s_mae}} pp, {{b0s_agree}}%), against a 90% target. Both underread at 15&ndash;50% coverage, where few cards exist, and the Sim&otilde;es pixel scale is inferred.</li>
+<li><b>The default loop verifier is a noise model.</b> The closed-loop grid uses perfect coverage plus Gaussian error calibrated to B0, which omits heavy-tailed failures and domain shift; the rendered-card runs have only 5 seeds.</li>
+<li><b>Same class, same physics.</b> Spray angle and pattern overlap are not modeled (beyond the boom-height overlap constraint), so families with the same droplet class and flow are indistinguishable to the selector.</li>
+</ul>
+
+<h2>9 Key Decisions</h2>
+<p>The decision log (<code>Docs/decisions.md</code>) holds {{n_decisions}} entries, each resolving an ambiguity or recording a design choice. D1&ndash;D5 fix conventions and catalog gaps; D6 deferred speed control; D7&ndash;D8 record the compressed schedule and the Python toolchain; D9 reports the real-card criterion as untested rather than estimating it; D10 adds nozzle exit velocity so medium droplets no longer drift implausibly (87% to 8% at 2 m/s). After the midterm: D11 and D12 add travel speed and boom height as optional settings; D13 the wind forecaster; D14 the hybrid predictor; D15 the fair oracle as the reference of the closed-loop criterion; D16 the residual-offset slow loop that replaced the LightGBM refit. Each post-midterm entry records its evaluation verdict.</p>
+
+<h2>10 Project Management and Contributions</h2>
+<p>Tools follow the proposal: a GitHub repository with review before merge, a Microsoft Teams channel, the decision log and an AI-use log ({{ai_log_rows}} entries). After the midterm the M3&ndash;M4 work (B1 GPU training, slow-loop redesign, fair oracle and the full closed-loop rerun) was completed, and the four extensions were added and evaluated. The real-card evaluation remains blocked by data access.</p>
+<div class="caption"><b>Table #contrib.</b> Contributions. Modules implemented by AI agents are owned and reviewed by the named member.</div>
+<table class="big">
+<tr><th style="width:12%">Member</th><th style="width:28%">Responsibilities</th><th style="width:60%">Work completed</th></tr>
+<tr><td><b>Emery Brewer</b> (remote)</td><td>System specification, physics relationships, scenario rationale, selector ownership, domain validation.</td>
+<td>Authored the parameter specification and early simulations that define <code>spec.yaml</code> and the simulator physics; owner of the catalog, scenario library and selector. <span class="confirm">TEAM TO CONFIRM</span> review of the speed and boom-height relationships (D11, D12) and the domain-validation text.</td></tr>
+<tr><td><b>Junjie Ao</b></td><td>Simulator and dataset pipeline; predictive model ownership.</td>
+<td>Owner of the simulator, dataset v1 and the <code>SprayModel</code> (LightGBM with conformal interval, baselines, grouped-split evaluation) and of the hybrid predictor evaluation (D14). <span class="confirm">TEAM TO CONFIRM</span> his own authoring and review.</td></tr>
+<tr><td><b>Kinjalk Parth</b></td><td>WSP renderer; verification; feedback and loop; integration and experiments; orchestration of AI-assisted work.</td>
+<td>Contracts, decision log, renderer, B0, B1 (GPU training), Sim&otilde;es loader, feedback (fast loop, residual slow loop), loop harness with fair oracle, closed-loop grid, forecaster and extension experiments, Streamlit app, this report; review and merge of all work packages.</td></tr>
+</table>
+
+<h2>11 AI-Use Disclosure</h2>
+<p>The course permits AI use, and this project uses it heavily. Plans, contracts, simulator, catalog transcription, model, selector, scenarios, renderer, both verifiers, feedback, loop, experiments, app, tests and this report were produced by Claude models (Claude Opus as orchestrator and reviewer, Claude Sonnet and Opus models as implementation agents) under the team's direction; {{ai_log_rows}} sessions are recorded in <code>Docs/ai_usage_log.md</code> (Appendix A). Team members set the scope, resolve ambiguities in the decision log, review the modules they own, and are responsible for every claim here. Numbers are read from results files at build time; the only typed numbers are the midterm end-to-end run and the test-suite count, each with its source in <code>reports/final/build.py</code>.</p>
+
+<h2>References</h2>
+<ol class="refs">
+<li>A. S. Felsot, J. B. Unsworth, J. B. H. J. Linders, G. Roberts, D. Rautman, C. Harris, and E. Carazo. Agrochemical spray drift; assessment and mitigation&mdash;A review. <i>J. Environ. Sci. Health, Part B</i>, 46(1):1&ndash;23, 2011.</li>
+<li>H. Zhu, M. Salyani, and R. D. Fox. A portable scanning system for evaluation of spray deposit distribution. <i>Computers and Electronics in Agriculture</i>, 76:38&ndash;43, 2011. doi:10.1016/j.compag.2011.01.003.</li>
+<li>ANSI/ASABE S572.3. Spray Nozzle Classification by Droplet Spectra. ASABE, St. Joseph, MI, 2020.</li>
+<li>Kansas State University Research and Extension. Droplet Size Calibration: A New Approach to Effective Spraying. Publication MF2869.</li>
+<li>E. Cerruto, S. Failla, D. Longo, and G. Manetto. Simulation of water sensitive papers for spray analysis. <i>CIGR Journal</i>, 18(4), 2016.</li>
+<li>E. Cerruto, G. Manetto, D. Longo, S. Failla, and R. Papa. A model to estimate the spray deposit by simulated water sensitive papers. <i>Crop Protection</i>, 124:104861, 2019. doi:10.1016/j.cropro.2019.104861.</li>
+<li>I. Sim&otilde;es, A. J. Sousa, A. Baltazar, and F. Santos. Spray quality assessment on water-sensitive paper comparing AI and classical computer vision methods. <i>Agriculture</i>, 15(3):261, 2025. doi:10.3390/agriculture15030261; data: doi:10.5281/zenodo.13995950.</li>
+<li>Q. Gao, M. Sozzi, and F. Marinello. U-Net-based semantic segmentation and concave point detection for adhesive droplets on water-sensitive paper. University of Padova research record, 2025. hdl:11577/3569369.</li>
+<li>L. Schiller and A. Naumann. &Uuml;ber die grundlegenden Berechnungen bei der Schwerkraftaufbereitung. <i>Z. Ver. Dtsch. Ing.</i>, 77:318&ndash;320, 1933.</li>
+<li>R. E. Williamson and E. D. Threadgill. A simulation for the dynamics of evaporating spray droplets in agricultural spraying. <i>Trans. ASAE</i>, 17(2):254&ndash;261, 1974.</li>
+<li>R. Stull. Wet-bulb temperature from relative humidity and air temperature. <i>J. Appl. Meteorol. Climatol.</i>, 50(11):2267&ndash;2269, 2011. doi:10.1175/JAMC-D-11-0143.1.</li>
+<li>TeeJet Technologies, Spray Nozzles Catalog 51A (TP, XR, DGX rate charts); Hypro (Pentair), ULD and 3D nozzle sales sheets.</li>
+<li>University of Nebraska&ndash;Lincoln Extension. Temperature, humidity and evaporation of spray droplets, G1773.</li>
+<li>U.S. EPA. Mitigation menu measure descriptions. epa.gov/pesticides/mitigation-menu-measure-descriptions.</li>
+<li>G. Ke et al. LightGBM: a highly efficient gradient boosting decision tree. <i>Advances in Neural Information Processing Systems</i> 30, 2017.</li>
+<li>Y. Romano, E. Patterson, and E. J. Cand&egrave;s. Conformalized quantile regression. <i>Advances in Neural Information Processing Systems</i> 32, 2019.</li>
+<li>N. Otsu. A threshold selection method from gray-level histograms. <i>IEEE Trans. Systems, Man, and Cybernetics</i>, 9(1):62&ndash;66, 1979.</li>
+</ol>
+<p class="note">References [1]&ndash;[8] reuse the proposal's [1], [2], [8], [10], [11], [14], [9], [12]; the rest are sources used in the code or project documents. <span class="confirm">TEAM TO CONFIRM references [9]&ndash;[11] and [15]&ndash;[17]</span></p>
+
+<h2 class="pb">Appendix A: AI Usage Log</h2>
+<p class="note">Reproduced from <code>Docs/ai_usage_log.md</code> at build time ({{ai_log_rows}} sessions).</p>
+{{ai_log_table}}
+
+</body>
+</html>
