@@ -129,7 +129,16 @@ def build_features(X: np.ndarray, S: np.ndarray) -> np.ndarray:
 def featurize(xs: Sequence[Conditions], us: Sequence[Setting]) -> np.ndarray:
     if len(xs) != len(us):
         raise ValueError("xs and us must have equal length")
-    return build_features(condition_array(xs), setting_array(us))
+    X = condition_array(xs)
+    sp = [u.travel_speed_kmh for u in us]
+    if any(s is not None for s in sp):   # setting-controlled speed overrides the condition's
+        X = X.copy()
+        X[:, 5] = [x_s if s is None else s for x_s, s in zip(X[:, 5], sp)]
+    hs = [u.boom_height_m for u in us]
+    if any(h is not None for h in hs):   # setting-controlled boom height overrides the condition's
+        X = X.copy()
+        X[:, 6] = [x_h if h is None else h for x_h, h in zip(X[:, 6], hs)]
+    return build_features(X, setting_array(us))
 
 
 def featurize_frame(df) -> np.ndarray:

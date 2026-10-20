@@ -111,7 +111,7 @@ def test_oracle_prediction_equals_realized_outcome(conds, mismatch):
 
 def test_oracle_policy_pass_logs_consistent(conds):
     m = build_modules("oracle_nominal", "perfect")
-    logs = run_pass(conds[:10], "oracle", m, SEED, "med", C_REQ, "o", render=False)
+    logs = run_pass(conds[:10], "oracle_card", m, SEED, "med", C_REQ, "o", render=False)
     sim, oracle = m.simulator, OracleModel(m.simulator, "med", SEED)
     sim.begin_pass(SEED, "med")
     for l in logs:

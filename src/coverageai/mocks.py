@@ -12,7 +12,7 @@ import numpy as np
 from coverageai import units
 from coverageai.config import spec
 from coverageai.contracts import (CardMeasurement, Conditions, Derived, Outcome,
-                                  Prediction, Setting, coverage_class)
+                                  Prediction, Setting, coverage_class, effective_boom_height_m)
 
 # family -> size -> (flow_gpm at 40 psi, droplet class at 40 psi)
 STUB_CATALOG: dict[str, dict[str, tuple[float, str]]] = {
@@ -28,7 +28,7 @@ def mock_derive(x: Conditions, u: Setting) -> Derived:
     s = spec()
     q40, dc = STUB_CATALOG[u.family][u.size]
     flow = q40 * math.sqrt(u.pressure_psi / 40.0)
-    mph = units.kmh_to_mph(x.travel_speed_kmh)
+    mph = units.kmh_to_mph(u.travel_speed_kmh if u.travel_speed_kmh is not None else x.travel_speed_kmh)
     gpa = units.gpa(flow, mph, s["boom"]["nozzle_spacing_in"])
     vmd = s["droplets"]["vmd_center_um"][dc] * (u.pressure_psi / 40.0) ** -0.3
     rel = units.wrap_deg(x.wind_dir_deg - x.heading_deg)
@@ -52,13 +52,14 @@ def mock_candidates() -> list[Setting]:
 
 def _closed_form(x: Conditions, u: Setting) -> tuple[float, float, float, float]:
     d = mock_derive(x, u)
-    drift = 1 - math.exp(-abs(d.u_cross_ms) * x.boom_height_m * 60.0 / d.vmd_um)
+    h = effective_boom_height_m(x, u)
+    drift = 1 - math.exp(-abs(d.u_cross_ms) * h * 60.0 / d.vmd_um)
     drift = min(max(drift, 0.0), 0.95)
     dep = units.gpa_to_ul_cm2(d.app_rate_gpa) * (1 - drift)
     stain_um = 1.9 * d.vmd_um
     n_per_cm2 = dep * 1e9 / (math.pi / 6 * d.vmd_um ** 3)   # uL -> um^3
     cov = 100 * (1 - math.exp(-n_per_cm2 * math.pi / 4 * (stain_um * 1e-4) ** 2))
-    disp = d.u_cross_ms * x.boom_height_m / max(d.vmd_um * 4e-3, 0.05) * 1000 * 0.01
+    disp = d.u_cross_ms * h / max(d.vmd_um * 4e-3, 0.05) * 1000 * 0.01
     return cov, dep, drift, disp
 
 

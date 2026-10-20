@@ -1,6 +1,6 @@
 """Shared records and module interfaces for CoverageVision AI.
 
-Frozen at schema version 1.0. Only the orchestrator changes this file; bump
+Frozen at schema version 1.2 (1.0 plus optional Setting.travel_speed_kmh and Setting.boom_height_m). Only the orchestrator changes this file; bump
 SCHEMA_VERSION on any change. Notation follows the proposal: x = conditions the
 controller cannot set, u = spray setting it chooses.
 """
@@ -13,7 +13,11 @@ from typing import Any, Iterable, Literal, Protocol, runtime_checkable
 
 import numpy as np
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.2"
+# 1.1: Setting gained the optional field travel_speed_kmh (default None = use the
+# condition's speed, i.e. 1.0 behaviour). Additive: 1.0 logs/records still load.
+# 1.2: Setting gained the optional field boom_height_m (default None = use the condition's
+# boom height, i.e. 1.0/1.1 behaviour). Additive: 1.0/1.1 logs/records still load.
 
 CoverageClass = Literal["acceptable", "marginal", "critical"]
 MismatchLevel = Literal["none", "low", "med", "high"]
@@ -37,6 +41,25 @@ class Setting:
     family: str                  # TP65, ULD, 3D, XR, DGX40
     size: str                    # manufacturer size code, e.g. "03"
     pressure_psi: float
+    # Optional controllable travel speed (km/h). None = use x.travel_speed_kmh (v1.0
+    # behaviour). When set it overrides x's speed everywhere speed matters: GPA in
+    # catalog.derive, the predictor's speed/GPA features, and the simulator (via derive).
+    travel_speed_kmh: float | None = None
+    # Optional controllable boom (release) height (m). None = use x.boom_height_m (v1.0/1.1
+    # behaviour). When set it overrides x's height in the simulator, the predictor features and
+    # the mock model: lower release means shorter fall, less drift and displacement, but the
+    # fans must still overlap between nozzles (selector enforces a per-family minimum height).
+    boom_height_m: float | None = None
+
+
+def effective_boom_height_m(x: Conditions, u: Setting) -> float:
+    """Release height in force for (x, u): the setting's height if chosen, else the condition's."""
+    return x.boom_height_m if u.boom_height_m is None else u.boom_height_m
+
+
+def effective_speed_kmh(x: Conditions, u: Setting) -> float:
+    """Travel speed in force for (x, u): the setting's speed if chosen, else the condition's."""
+    return x.travel_speed_kmh if u.travel_speed_kmh is None else u.travel_speed_kmh
 
 
 @dataclass(frozen=True)

@@ -113,9 +113,11 @@ def test_determinism():
 
 
 def test_slow_loop_fits_incrementally_with_measured_coverage():
+    """Legacy (midterm) slow loop: model.fit receives only the new records of each pass."""
     m = default_mock_modules()
     m.model = OffsetModel(m.model, 0.0)
-    logs = run_passes_slow(make_conditions(5, 0), m, 0, "med", C_REQ, n_passes=3)
+    logs = run_passes_slow(make_conditions(5, 0), m, 0, "med", C_REQ, n_passes=3,
+                           slow_mode="refit")
     assert len(logs) == 15
     assert len(m.model.fits) == 2 and all(len(f) == 5 for f in m.model.fits)
     x, u, o = m.model.fits[0][0]
@@ -130,7 +132,7 @@ def test_logs_frame_and_save(tmp_path):
     pq, jl = save_logs(logs, tmp_path / "run")
     assert len(pd.read_parquet(pq)) == 4
     assert len(jl.read_text().splitlines()) == 4
-    assert json.loads(jl.read_text().splitlines()[0])["schema_version"] == "1.0"
+    assert json.loads(jl.read_text().splitlines()[0])["schema_version"] == "1.2"
 
 
 def test_summarize():

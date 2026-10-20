@@ -10,7 +10,7 @@ Both use the same notebook, `notebooks/train_unet_gpu.ipynb`. It detects the env
 
 ## Before you start
 
-1. Make sure the branch you clone contains `vision/unet.py` and `vision/render.py` (merge WP-13 into `main` first).
+1. Make sure the branch you clone (`BRANCH` in cell 1, default `main`) contains `vision/unet.py` and `vision/render.py`. Both are on `main` (WP-13 is merged); push any local commits first, the notebook clones from GitHub, not from your working copy.
 2. Create a fine-grained GitHub personal access token with read-only "Contents" access to
    `MasterKinjalk/coverageai`. Never paste it into a notebook cell and never commit it. The notebook reads
    it from the `GITHUB_TOKEN` environment variable or asks for it with a hidden prompt, then removes it from
@@ -44,6 +44,21 @@ Both use the same notebook, `notebooks/train_unet_gpu.ipynb`. It detects the env
    falls back to `PYTHONPATH=src`.
 5. Training uses `batch=48`, `crop=512`, bf16 and `os.cpu_count()` data-loader workers (max 16), capped at 45 minutes.
 6. Get the zip from the Jupyter file browser or `scp` it; the path is printed in the last cell.
+
+## After training: refresh the verification results (local, CPU)
+
+The notebook only evaluates the renderer test split (`results/b1_synthetic.json`). The full O3 evidence
+(coverage MAE on renderer and Simoes cards, IoU, count and Dv errors, stratification by coverage band and stain
+size, runtime on your CPU, criterion table) comes from `experiments/eval_verifiers.py`:
+
+1. Unzip `b1_unet_results.zip` into the repo root (this replaces `models/unet_v1.pt`; keep the CPU-partial one
+   under another name if you want to compare).
+2. `uv run python experiments/eval_verifiers.py --verifiers b1 --merge` (about 30 minutes on a laptop CPU; B0 rows
+   already in `results/verification_eval.json` are kept). Needs the open Simoes synthetic cards under
+   `data/external/simoes2025` (`uv run python -m coverageai.vision.real_data --download`).
+3. Files updated: `models/unet_v1.pt`, `results/b1_synthetic.json` (from Colab), `results/verification_eval.json`
+   and `results/verification_summary.md` (B1 rows). `results/b1_synthetic_cpu_partial.json` stays as the record of
+   the 6-epoch CPU run.
 
 ## Same thing from a terminal
 

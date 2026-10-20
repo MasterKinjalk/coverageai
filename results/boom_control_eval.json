@@ -1,0 +1,434 @@
+{
+  "n": 200,
+  "seed": 0,
+  "c_req": 30.0,
+  "heights_m": [
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.75
+  ],
+  "speeds_kmh": [
+    8.0,
+    12.0,
+    16.0,
+    20.0,
+    24.0,
+    28.0
+  ],
+  "band": 0.25,
+  "min_overlap_height_m": {
+    "TP65": 0.5183101775641953,
+    "ULD": 0.19064105888641447,
+    "3D": 0.27707069821473784,
+    "XR": 0.2312085291168462,
+    "DGX40": 0.9072170439039163
+  },
+  "open_loop": {
+    "nominal_physics": {
+      "off": {
+        "success": 0.945,
+        "mean_drift": 0.013271551704039068,
+        "mean_gpa": 24.827880852364377,
+        "frac_height_changed": 0.0,
+        "mean_height_ratio": 1.0,
+        "frac_speed_changed": 0.0
+      },
+      "height": {
+        "success": 0.945,
+        "mean_drift": 0.016586732558974283,
+        "mean_gpa": 21.424537104513526,
+        "frac_height_changed": 1.0,
+        "mean_height_ratio": 0.8602715775266918,
+        "frac_speed_changed": 0.0,
+        "d_success_vs_off": {
+          "mean": 0.0,
+          "lo": -0.02,
+          "hi": 0.02
+        },
+        "d_drift_vs_off": {
+          "mean": 0.0033151808549352155,
+          "lo": 0.001042355590246424,
+          "hi": 0.005655961380293288
+        },
+        "d_gpa_vs_off": {
+          "mean": -3.403343747850854,
+          "lo": -3.9774731634404783,
+          "hi": -2.841556882777216
+        }
+      },
+      "speed": {
+        "success": 0.94,
+        "mean_drift": 0.011807140520534849,
+        "mean_gpa": 23.674172760840467,
+        "frac_height_changed": 0.0,
+        "mean_height_ratio": 1.0,
+        "frac_speed_changed": 0.63,
+        "d_success_vs_off": {
+          "mean": -0.005,
+          "lo": -0.02,
+          "hi": 0.01
+        },
+        "d_drift_vs_off": {
+          "mean": -0.0014644111835042189,
+          "lo": -0.002737267682447644,
+          "hi": -0.0004859059196365764
+        },
+        "d_gpa_vs_off": {
+          "mean": -1.15370809152392,
+          "lo": -1.537562049534963,
+          "hi": -0.7721151756887847
+        }
+      },
+      "speed+height": {
+        "success": 0.925,
+        "mean_drift": 0.010377648413819086,
+        "mean_gpa": 21.658394220039817,
+        "frac_height_changed": 1.0,
+        "mean_height_ratio": 0.8602715775266918,
+        "frac_speed_changed": 0.7,
+        "d_success_vs_off": {
+          "mean": -0.02,
+          "lo": -0.04,
+          "hi": -0.005
+        },
+        "d_drift_vs_off": {
+          "mean": -0.0028939032902199823,
+          "lo": -0.0048797753608087625,
+          "hi": -0.001113577535100955
+        },
+        "d_gpa_vs_off": {
+          "mean": -3.1694866323245594,
+          "lo": -3.5916626537543985,
+          "hi": -2.755228363324135
+        }
+      }
+    },
+    "spray": {
+      "off": {
+        "success": 0.94,
+        "mean_drift": 0.013129837998127414,
+        "mean_gpa": 24.781648139871788,
+        "frac_height_changed": 0.0,
+        "mean_height_ratio": 1.0,
+        "frac_speed_changed": 0.0
+      },
+      "height": {
+        "success": 0.95,
+        "mean_drift": 0.015807858004797892,
+        "mean_gpa": 22.173802429091015,
+        "frac_height_changed": 0.9,
+        "mean_height_ratio": 0.8700836599974547,
+        "frac_speed_changed": 0.0,
+        "d_success_vs_off": {
+          "mean": 0.01,
+          "lo": -0.015,
+          "hi": 0.035
+        },
+        "d_drift_vs_off": {
+          "mean": 0.0026780200066704785,
+          "lo": 0.0005003581455762922,
+          "hi": 0.004923771132657317
+        },
+        "d_gpa_vs_off": {
+          "mean": -2.6078457107807695,
+          "lo": -3.1377313883055713,
+          "hi": -2.0571531956649793
+        }
+      },
+      "speed": {
+        "success": 0.94,
+        "mean_drift": 0.012156122949196959,
+        "mean_gpa": 23.712556522895376,
+        "frac_height_changed": 0.0,
+        "mean_height_ratio": 1.0,
+        "frac_speed_changed": 0.645,
+        "d_success_vs_off": {
+          "mean": 0.0,
+          "lo": -0.02,
+          "hi": 0.02
+        },
+        "d_drift_vs_off": {
+          "mean": -0.0009737150489304525,
+          "lo": -0.0018379209817268147,
+          "hi": -0.00012855156660371183
+        },
+        "d_gpa_vs_off": {
+          "mean": -1.0690916169764142,
+          "lo": -1.4460113040888856,
+          "hi": -0.6838140824230924
+        }
+      },
+      "speed+height": {
+        "success": 0.935,
+        "mean_drift": 0.010214221257321632,
+        "mean_gpa": 22.154699655884638,
+        "frac_height_changed": 0.92,
+        "mean_height_ratio": 0.8710910036230766,
+        "frac_speed_changed": 0.66,
+        "d_success_vs_off": {
+          "mean": -0.005,
+          "lo": -0.025,
+          "hi": 0.015
+        },
+        "d_drift_vs_off": {
+          "mean": -0.0029156167408057815,
+          "lo": -0.004232986305910351,
+          "hi": -0.0015138861918047122
+        },
+        "d_gpa_vs_off": {
+          "mean": -2.6269484839871495,
+          "lo": -3.0617475860927645,
+          "hi": -2.224143686544917
+        }
+      }
+    }
+  },
+  "closed_loop": {
+    "fast/med/off": {
+      "frac_met": 0.9337499999999999,
+      "mean_shortfall_pp": 0.08884318434784096,
+      "mean_volume_gpa": 24.131736088150515,
+      "mean_drift_frac": 0.01581417256614544,
+      "frac_height_changed": 0.0
+    },
+    "fast/med/height": {
+      "frac_met": 0.9175000000000001,
+      "mean_shortfall_pp": 0.12732767982764706,
+      "mean_volume_gpa": 21.929157454280137,
+      "mean_drift_frac": 0.014609965303869866,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.01624999999999999,
+        "lo": -0.024375,
+        "hi": -0.00873437500000007
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.03848449547980609,
+        "lo": 0.018968202020072256,
+        "hi": 0.06058568262674572
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -2.2025786338703766,
+        "lo": -2.789270710034773,
+        "hi": -1.6413043280761972
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.0012042072622755746,
+        "lo": -0.003940863792551229,
+        "hi": 0.0014772275831053969
+      }
+    },
+    "fast/med/speed+height": {
+      "frac_met": 0.905,
+      "mean_shortfall_pp": 0.15077634360464232,
+      "mean_volume_gpa": 21.538994172121544,
+      "mean_drift_frac": 0.013693660622782341,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.028749999999999998,
+        "lo": -0.03624999999999999,
+        "hi": -0.020625000000000015
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.06193315925680136,
+        "lo": 0.042864182819604135,
+        "hi": 0.08352078396264559
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -2.592741916028969,
+        "lo": -3.0943203585330954,
+        "hi": -2.10927262155384
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.0021205119433630975,
+        "lo": -0.004450521957230573,
+        "hi": 0.0002796475223271724
+      }
+    },
+    "fast/high/off": {
+      "frac_met": 0.9237500000000001,
+      "mean_shortfall_pp": 0.12324681295847224,
+      "mean_volume_gpa": 25.709018903267207,
+      "mean_drift_frac": 0.019770944324501827,
+      "frac_height_changed": 0.0
+    },
+    "fast/high/height": {
+      "frac_met": 0.9075,
+      "mean_shortfall_pp": 0.15703273255897635,
+      "mean_volume_gpa": 23.66716690412623,
+      "mean_drift_frac": 0.016453508654836406,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.016249999999999983,
+        "lo": -0.02624999999999996,
+        "hi": -0.006249999999999978
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.03378591960050409,
+        "lo": 0.017930194575166137,
+        "hi": 0.05008141015939145
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -2.041851999140978,
+        "lo": -2.4611951288142464,
+        "hi": -1.6291836326188909
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.003317435669665421,
+        "lo": -0.006154434058850326,
+        "hi": -0.0005330979598232913
+      }
+    },
+    "fast/high/speed+height": {
+      "frac_met": 0.889375,
+      "mean_shortfall_pp": 0.19285064866464757,
+      "mean_volume_gpa": 22.897344978792027,
+      "mean_drift_frac": 0.016280816553502324,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.034374999999999996,
+        "lo": -0.044375,
+        "hi": -0.024374999999999987
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.06960383570617533,
+        "lo": 0.05030389553372827,
+        "hi": 0.08995526273238691
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -2.81167392447518,
+        "lo": -3.3391656308068023,
+        "hi": -2.3181152410909514
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.0034901277709995003,
+        "lo": -0.006553457993634272,
+        "hi": -0.0005033917930428366
+      }
+    },
+    "oracle/med/off": {
+      "frac_met": 0.9556249999999998,
+      "mean_shortfall_pp": 0.03062750978554697,
+      "mean_volume_gpa": 24.153929703598664,
+      "mean_drift_frac": 0.01527498395014546,
+      "frac_height_changed": 0.0
+    },
+    "oracle/med/height": {
+      "frac_met": 0.9506250000000002,
+      "mean_shortfall_pp": 0.03938896425312479,
+      "mean_volume_gpa": 22.660683323396178,
+      "mean_drift_frac": 0.011721657219470879,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.005000000000000007,
+        "lo": -0.012500000000000006,
+        "hi": 0.0031249999999999915
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.00876145446757782,
+        "lo": 0.003633249910567821,
+        "hi": 0.013744930128081702
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -1.4932463802024862,
+        "lo": -1.8343664362130092,
+        "hi": -1.1781715110708395
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.00355332673067458,
+        "lo": -0.005239184828780017,
+        "hi": -0.0018925104808148535
+      }
+    },
+    "oracle/med/speed+height": {
+      "frac_met": 0.934375,
+      "mean_shortfall_pp": 0.04985140036109833,
+      "mean_volume_gpa": 22.08410184633421,
+      "mean_drift_frac": 0.0121008779173905,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.021250000000000012,
+        "lo": -0.031250000000000014,
+        "hi": -0.01125000000000001
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.019223890575551367,
+        "lo": 0.011597888817795169,
+        "hi": 0.028249003032056953
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -2.069827857264451,
+        "lo": -2.4443831782343812,
+        "hi": -1.7341120964742474
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.0031741060327549605,
+        "lo": -0.004944101898225278,
+        "hi": -0.0014119873419249493
+      }
+    },
+    "oracle/high/off": {
+      "frac_met": 0.9493749999999999,
+      "mean_shortfall_pp": 0.034254414456729096,
+      "mean_volume_gpa": 25.68508286626214,
+      "mean_drift_frac": 0.01902241392537054,
+      "frac_height_changed": 0.0
+    },
+    "oracle/high/height": {
+      "frac_met": 0.9475,
+      "mean_shortfall_pp": 0.04186671218226973,
+      "mean_volume_gpa": 24.389154022560803,
+      "mean_drift_frac": 0.012979624420943348,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.0018750000000000017,
+        "lo": -0.008749999999999999,
+        "hi": 0.0050000000000000044
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.007612297725540626,
+        "lo": -9.209900092194302e-05,
+        "hi": 0.016247425622828642
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -1.2959288437013345,
+        "lo": -1.5151110810327622,
+        "hi": -1.0848034405399383
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.0060427895044271925,
+        "lo": -0.007508964118025643,
+        "hi": -0.004624082501063017
+      }
+    },
+    "oracle/high/speed+height": {
+      "frac_met": 0.9225,
+      "mean_shortfall_pp": 0.06489785471727787,
+      "mean_volume_gpa": 23.853343972862923,
+      "mean_drift_frac": 0.012393270289578902,
+      "frac_height_changed": 1.0,
+      "d_frac_met_vs_off": {
+        "mean": -0.026874999999999993,
+        "lo": -0.03687499999999999,
+        "hi": -0.017499999999999995
+      },
+      "d_mean_shortfall_pp_vs_off": {
+        "mean": 0.03064344026054877,
+        "lo": 0.02107273019347985,
+        "hi": 0.04171666152099657
+      },
+      "d_mean_volume_gpa_vs_off": {
+        "mean": -1.8317388933992127,
+        "lo": -2.0603125681244236,
+        "hi": -1.6109850141274618
+      },
+      "d_mean_drift_frac_vs_off": {
+        "mean": -0.006629143635791637,
+        "lo": -0.008212560473612868,
+        "hi": -0.005137514952317851
+      }
+    }
+  }
+}

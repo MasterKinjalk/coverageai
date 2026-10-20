@@ -13,3 +13,10 @@ results/runs/
 data/datasets/
 models/*.joblib
 models/*.pkl
+*.zip
+
+# Trained weights shipped in git so a fresh clone runs without retraining
+!models/unet_v1.pt
+!models/spray_model_v1.joblib
+!models/hybrid_v1.joblib
+!models/hybrid_misspec_v1.joblib

@@ -42,7 +42,7 @@ import numpy as np
 
 from coverageai.config import spec
 from coverageai.contracts import (Conditions, Derived, DropletSample, MismatchLevel, Outcome,
-                                  Setting)
+                                  Setting, effective_boom_height_m)
 from coverageai.physics import coverage as cov_mod
 from coverageai.physics import drift as drift_mod
 from coverageai.physics.droplets import lognormal_volume_bins, sigma_from_span
@@ -181,14 +181,23 @@ class SpraySimulator:
                 np.array([d.app_rate_gpa * hid.flow_factor]),
                 np.array([d.u_cross_ms * hid.gust_mult]),
                 np.array([d.u_along_ms * hid.gust_mult]),
-                np.array([x.boom_height_m]), np.array([x.temp_c]), np.array([x.rh_pct]),
+                np.array([effective_boom_height_m(x, u)]), np.array([x.temp_c]), np.array([x.rh_pct]),
                 np.array([hid.canopy_eta]), np.array([sf]), np.array([u.pressure_psi]))
 
     # ------------------------------------------------------------ public API
+    # Realized (effective) wind of the most recent ``simulate`` call, for an anemometer model
+    # (coverageai.forecast): {"wind_speed_ms": x.wind_speed_ms * gust_mult, "gust_mult": ...}.
+    # Purely additive bookkeeping: it draws nothing from ``rng`` and changes no output. It is
+    # only updated by ``simulate`` (not by simulate_candidates / oracles), so after the plant
+    # call for segment k it holds segment k's realized wind. None before the first call.
+    last_realized: dict | None = None
+
     def simulate(self, x: Conditions, u: Setting, rng: np.random.Generator,
                  mismatch: MismatchLevel = "none", sample_droplets: bool = False) -> Outcome:
         """One segment; see the module docstring for the rng draw order."""
         hid, sf = self._draw_segment(rng, mismatch)
+        self.last_realized = {"wind_speed_ms": float(x.wind_speed_ms) * float(hid.gust_mult),
+                              "gust_mult": float(hid.gust_mult)}
         r = self._core(*self._inputs(x, u, hid, sf))
         sample = self._sample(r, sf, rng) if sample_droplets else None
         return Outcome(coverage_pct=float(r["coverage"][0]),
@@ -213,7 +222,7 @@ class SpraySimulator:
         gpa = np.array([d.app_rate_gpa for d in ders])
         uc = np.array([d.u_cross_ms for d in ders])
         ua = np.array([d.u_along_ms for d in ders])
-        h = np.array([x.boom_height_m for x in xs])
+        h = np.array([effective_boom_height_m(x, u) for x, u in zip(xs, us)])
         pr = np.array([u.pressure_psi for u in us])
         t = np.array([x.temp_c for x in xs])
         rh = np.array([x.rh_pct for x in xs])

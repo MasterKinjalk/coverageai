@@ -4,7 +4,18 @@
          s.t.  C_hat(x,u) + bias - m(x,u) >= C_req
 
 D_n, V_n are min-max normalized over the *feasible* set (zero range -> 0).
-V(u) is the application volume per area, derive(x,u).app_rate_gpa.
+V(u) is the application volume per area, derive(x,u).app_rate_gpa (uses the effective
+travel speed: u.travel_speed_kmh if set, else x's).
+
+Optional speed control (``speed_options_kmh``, off by default): each base candidate is also
+offered at every grid speed within +-speed_band_frac of x's speed and the spec speed range.
+Slower travel raises GPA and deposition (and lowers drift per unit liquid), faster does the
+reverse, so the selector can trade volume for coverage without changing the nozzle.
+
+Optional boom-height control (``boom_height_options_m``, off by default, combinable with speed):
+candidates are also offered at grid heights within +-boom_height_band_frac of x's height, the
+spec height range and above the family's minimum overlap height (catalog.min_boom_height_m).
+Lower release means shorter fall, less drift; too low causes fan-overlap striping.
 
 Margin m (pp): with ``use_interval_margin`` it is the lower half-width of the
 model's prediction interval, floored so a degenerate (zero-width) interval cannot
@@ -48,8 +59,25 @@ def _minmax(v: np.ndarray) -> np.ndarray:
 class ConstrainedSelector:
     def __init__(self, lam: float | None = None, margin_pp: float | None = None,
                  use_interval_margin: bool | None = None,
-                 candidates_fn: CandidatesFn | None = None, derive_fn: DeriveFn | None = None):
+                 candidates_fn: CandidatesFn | None = None, derive_fn: DeriveFn | None = None,
+                 speed_options_kmh: Sequence[float] | None = None,
+                 speed_band_frac: float | None = None,
+                 boom_height_options_m: Sequence[float] | None = None,
+                 boom_height_band_frac: float | None = None,
+                 boom_overlap_factor: float | None = None):
         s = spec()["selector"]
+        # Opt-in travel-speed control: None -> spec default (empty = off).
+        self.speed_options_kmh = list(s.get("speed_options_kmh", []) if speed_options_kmh is None
+                                      else speed_options_kmh)
+        self.speed_band_frac = float(s.get("speed_band_frac", 0.25) if speed_band_frac is None
+                                     else speed_band_frac)
+        # Opt-in boom-height control (same pattern; empty = off).
+        self.boom_height_options_m = list(s.get("boom_height_options_m", [])
+                                          if boom_height_options_m is None else boom_height_options_m)
+        self.boom_height_band_frac = float(s.get("boom_height_band_frac", 0.25)
+                                           if boom_height_band_frac is None else boom_height_band_frac)
+        self.boom_overlap_factor = float(s.get("boom_overlap_factor", 1.3)
+                                         if boom_overlap_factor is None else boom_overlap_factor)
         self.lam = float(s["lambda"] if lam is None else lam)
         self.margin_pp = float(s["margin_pp"] if margin_pp is None else margin_pp)
         self.use_interval_margin = bool(s["use_interval_margin"] if use_interval_margin is None
@@ -68,6 +96,18 @@ class ConstrainedSelector:
             self._cands = list(self._candidates_fn())
         return self._cands
 
+    def candidates_for(self, x: Conditions) -> list[Setting]:
+        """Base candidates, plus speed variants within the band around x's speed if enabled."""
+        out = self.candidates
+        if self.speed_options_kmh:
+            from coverageai.catalog import with_speeds
+            out = with_speeds(out, x.travel_speed_kmh, self.speed_options_kmh, self.speed_band_frac)
+        if self.boom_height_options_m:   # combinable with speed: full product of the two grids
+            from coverageai.catalog import with_boom_heights
+            out = with_boom_heights(out, x.boom_height_m, self.boom_height_options_m,
+                                    self.boom_height_band_frac, self.boom_overlap_factor)
+        return out
+
     def margin(self, cov: np.ndarray, lo: np.ndarray) -> np.ndarray:
         if self.use_interval_margin:
             return np.maximum(0.5 * self.margin_pp, cov - lo)
@@ -75,7 +115,7 @@ class ConstrainedSelector:
 
     def select(self, x: Conditions, model, bias: float, c_req: float) -> tuple[Setting, dict]:
         t0 = time.perf_counter()
-        cands = self.candidates
+        cands = self.candidates_for(x)
         n = len(cands)
         if n == 0:
             raise ValueError("no candidate settings")

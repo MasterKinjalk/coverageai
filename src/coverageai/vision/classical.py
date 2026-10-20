@@ -297,6 +297,12 @@ class ClassicalVerifier:
         return mask.astype(bool), {"threshold": thr, "threshold_method": method, **diag}
 
     # -------------------------------------------------- stains and sizes
+    def stats_from_mask(self, mask: np.ndarray, px_per_mm: float, card_px: int) -> dict[str, Any]:
+        """Stain count / density / Dv0.1-0.9 / largest-component share of ANY boolean stain mask
+        (e.g. the U-Net's) with this verifier's distance-transform watershed. ``card_px`` is the
+        number of card pixels (the density denominator). Same keys as the stats in ``last_info``."""
+        return self._stain_stats(np.asarray(mask, bool), px_per_mm, int(card_px))
+
     def _stain_areas(self, mask: np.ndarray) -> tuple[np.ndarray, float]:
         """Pixel area of every stain after splitting touching ones, and the largest
         connected component's share of the stained area.

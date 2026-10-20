@@ -5,6 +5,10 @@
 model:
   spray           learned SprayModel (WP-10), loaded from models/spray_model_v1.joblib
                   (searched in the repo root, its parents, or $COVERAGEAI_MODEL).
+  hybrid          PhysicsResidualModel (model/hybrid.py): nominal physics + regularized
+                  LightGBM residual + CQR interval, from models/hybrid_v1.joblib.
+  hybrid_misspec  the same with a deliberately misspecified physics base
+                  (models/hybrid_misspec_v1.joblib); evaluation only.
   oracle_nominal  NominalPhysicsModel: the simulator with mismatch "none" and the WSP
                   spread factor at its mean. Physics-perfect but blind to the hidden
                   mismatch (gust, canopy, wear). Stand-in until / alongside WP-10 and the
@@ -14,7 +18,8 @@ verifier:
   perfect         measurement = true outcome coverage (no image).
   noisy           true coverage + Gaussian error (per-coverage-band bias and sd from
                   results/b0_synthetic.json or b1_synthetic.json when present, else overall
-                  values from the same file; default sd 1.5 pp). No image.
+                  values from the same file; default sd 1.5 pp). The loop uses no image; for card replay
+                  (app_logic.replay_card) measure()/segment() read the rendered image with B0.
   b0              WSPRenderer card image -> vision.classical.ClassicalVerifier.
   b1              WSPRenderer card image -> learned U-Net verifier (when merged).
 """
@@ -23,7 +28,7 @@ from __future__ import annotations
 import copy
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -34,7 +39,7 @@ from coverageai.contracts import (CardMeasurement, Conditions, Outcome, Predicti
                                   coverage_class)
 from coverageai.loop import Modules, default_mock_modules
 
-MODEL_CHOICES = ("spray", "oracle_nominal", "mock")
+MODEL_CHOICES = ("spray", "oracle_nominal", "hybrid", "hybrid_misspec", "mock")
 VERIFIER_CHOICES = ("perfect", "noisy", "b0", "b1")
 DEFAULT_NOISE_SD_PP = 1.5
 MODEL_FILENAME = "spray_model_v1.joblib"
@@ -139,8 +144,26 @@ class NoisyVerifier:
                                coverage_class(c, s["acceptable_min"], s["marginal_min"]),
                                False, 0.0)
 
-    def measure(self, image, px_per_mm):  # pragma: no cover - protocol placeholder
-        raise NotImplementedError("NoisyVerifier reads the true outcome via measure_outcome()")
+    # -- image path (card replay in the app, app_logic.replay_card) ----------------------
+    # The loop never calls these (it reads measure_outcome). They exist so a rendered card can
+    # still be shown and read with this verifier: the image is read by the classical verifier B0,
+    # whose measured error profile (results/b0_synthetic.json) is exactly what the noise bands
+    # above were calibrated against, so the displayed reading is a realization of the same error
+    # distribution. It is deterministic and is NOT the same number as the loop's image-free draw.
+    _image_reader: object = field(default=None, init=False, repr=False, compare=False)
+
+    def _reader(self):
+        if self._image_reader is None:
+            from coverageai.vision.classical import ClassicalVerifier
+            self._image_reader = ClassicalVerifier()
+        return self._image_reader
+
+    def measure(self, image, px_per_mm) -> CardMeasurement:
+        return self._reader().measure(image, px_per_mm)
+
+    def segment(self, image, px_per_mm=None):
+        """(stain mask, card ROI mask) from B0, for the overlay."""
+        return self._reader().segment(image)
 
 
 def noise_params_from_results(which: str | None = None, results_dir: Path | None = None
@@ -246,6 +269,13 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
             mdl = model_obj
         elif model == "oracle_nominal":
             mdl = NominalPhysicsModel(sim)
+        elif model in ("hybrid", "hybrid_misspec"):
+            # physics-first hybrid (model/hybrid.py): nominal physics + learned residual + CQR;
+            # hybrid_misspec = same with a deliberately misspecified physics base (evaluation)
+            from coverageai.model.hybrid import load_hybrid_model
+            mdl = load_hybrid_model(model_path, misspec=(model == "hybrid_misspec"),
+                                    derive_fn=catalog.derive, record_weight=record_weight,
+                                    n_jobs=n_jobs)
         else:
             mdl = load_spray_model(model_path, record_weight=record_weight, n_jobs=n_jobs)
 

@@ -1,0 +1,72 @@
+{
+  "verifier": "B1_unet",
+  "split": "test",
+  "data": "/home/kinjalk2/coverageai/data/synthetic/v1",
+  "weights": "models/unet_v1.pt",
+  "overall": {
+    "n": 180,
+    "coverage_mae_pp": 0.17366999698496005,
+    "coverage_bias_pp": 0.019869544223409984,
+    "iou": 0.9374894798169745,
+    "class_agreement": 0.9888888888888889,
+    "runtime_s_mean": 0.325392193484327,
+    "coverage_mae_vs_mask_pp": 0.15068515507299285,
+    "runtime_s_max": 1.4489878499880433
+  },
+  "by_band": {
+    "0-10": {
+      "n": 29,
+      "coverage_mae_pp": 0.049336509083746025,
+      "coverage_bias_pp": -0.03784932521622698,
+      "iou": 0.939507704061184,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 0.2566625789321702
+    },
+    "10-20": {
+      "n": 38,
+      "coverage_mae_pp": 0.10492838079686613,
+      "coverage_bias_pp": -0.06603948095091293,
+      "iou": 0.9304467861270439,
+      "class_agreement": 0.9736842105263158,
+      "runtime_s_mean": 0.31599265747507543
+    },
+    "20-30": {
+      "n": 24,
+      "coverage_mae_pp": 0.18831933004038515,
+      "coverage_bias_pp": -0.12115913938147334,
+      "iou": 0.9266625069868407,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 0.2741818645542177
+    },
+    "30-45": {
+      "n": 37,
+      "coverage_mae_pp": 0.1558386041092105,
+      "coverage_bias_pp": -0.08434614493786287,
+      "iou": 0.9377829682714829,
+      "class_agreement": 0.972972972972973,
+      "runtime_s_mean": 0.32225240115076303
+    },
+    "45-60": {
+      "n": 33,
+      "coverage_mae_pp": 0.19911582993705118,
+      "coverage_bias_pp": 0.1452054377092005,
+      "iou": 0.9423475736377189,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 0.4015374471377017
+    },
+    "60-100": {
+      "n": 19,
+      "coverage_mae_pp": 0.4729498717184495,
+      "coverage_bias_pp": 0.4431839963721969,
+      "iou": 0.9531613238252438,
+      "class_agreement": 1.0,
+      "runtime_s_mean": 0.38764314245628684
+    }
+  },
+  "truth": "json",
+  "targets": {
+    "coverage_mae_pp": 2.0,
+    "class_agreement": 0.9,
+    "runtime_s": 2.0
+  }
+}

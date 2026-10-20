@@ -1,0 +1,350 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --line: #2b3340; --text: #e6edf3; --muted: #8a94a6;
+    --accent: #4da3ff; --good: #3ddc97; --bad: #ef5b5b; --evap: #9aa4b2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
+  .lab { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 8px 10px; }
+  .top { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; }
+  .title { font-weight: 600; font-size: 13px; color: #c9d1d9; }
+  .ctrl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  button { background: #1c2333; color: var(--text); border: 1px solid #364055; border-radius: 6px;
+    padding: 4px 10px; font: inherit; cursor: pointer; line-height: 1.2; }
+  button:hover { border-color: var(--accent); }
+  .seg { display: inline-flex; border: 1px solid #364055; border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 4px 8px; background: #161b22; }
+  .seg button.on { background: #2d3a55; font-weight: 650; }
+  .note { color: var(--muted); font-size: 12px; }
+  canvas { display: block; width: 100%; margin-top: 4px; }
+  .scrub { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px; color: var(--muted); font-size: 12px; }
+  .scrub input { flex: 1; accent-color: var(--accent); }
+  .scrub b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+  .tally { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; align-items: center; font-size: 12px; }
+  .tally .lbl { color: var(--muted); }
+  .bar { display: flex; height: 14px; border: 1px solid #2b3340; background: #161b22; }
+  .bar div { height: 100%; }
+  .vals { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--muted); }
+  .vals b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .sw { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 3px 16px; margin-top: 5px; font-size: 12px; color: var(--muted); }
+  .legend svg { vertical-align: -2px; margin-right: 4px; }
+  .final { margin-top: 4px; font-size: 12px; color: #c9d1d9; min-height: 16px; }
+  @media (max-width: 560px) {
+    .tally { grid-template-columns: 1fr; } .vals { grid-column: 1; gap: 1px 10px; }
+    .legend { gap: 1px 10px; font-size: 11px; } .final { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<div class="lab">
+  <div class="top">
+    <div class="title">Rear view of the boom (looking along the travel direction): droplet positions over time</div>
+    <div class="ctrl">
+      <button id="play">Pause</button>
+      <button id="replay">Replay</button>
+      <span class="seg" id="speeds">
+        <button data-s="0.1">0.1×</button><button data-s="0.25">0.25×</button><button data-s="1">1×</button>
+      </span>
+      <span class="note" id="slow"></span>
+    </div>
+  </div>
+  <canvas id="cv"></canvas>
+  <div class="scrub"><span>Time</span><input type="range" id="scrub" min="0" max="1" step="0.001" value="0"><b id="tval">0.00 s</b></div>
+  <div class="tally">
+    <span class="lbl">Volume released so far (%)</span>
+    <div class="bar"><div id="bL" style="background:var(--good)"></div><div id="bB" style="background:var(--bad)"></div><div id="bE" style="background:var(--evap)"></div><div id="bA" style="background:#2b3340"></div></div>
+    <div class="vals">
+      <span><span class="sw" style="background:var(--good)"></span>deposited on target <b id="cL">0.0</b></span>
+      <span><span class="sw" style="background:var(--bad)"></span>drifted (displaced &gt; <span id="thrv"></span>) <b id="cB">0.0</b></span>
+      <span><span class="sw" style="background:var(--evap)"></span>evaporated <b id="cE">0.0</b></span>
+      <span><span class="sw" style="background:#2b3340"></span>airborne <b id="cA">0.0</b></span>
+    </div>
+  </div>
+  <div class="legend">
+    <span><svg width="12" height="12"><path d="M1,2 L11,2 L6,11 Z" fill="#c9d1d9"/></svg>nozzle</span>
+    <span><svg width="12" height="12"><circle cx="6" cy="6" r="3" fill="#7ad151"/></svg>airborne droplet (colour = initial diameter)</span>
+    <span><svg width="12" height="12"><line x1="6" y1="2" x2="6" y2="11" stroke="#7ad151" stroke-width="2"/></svg>deposited on target</span>
+    <span><svg width="12" height="12"><circle cx="6" cy="6" r="3.5" fill="none" stroke="#7ad151" stroke-width="1.5"/></svg>deposited, displaced &gt; threshold (drift)</span>
+    <span><svg width="12" height="12"><path d="M2,2 L10,10 M10,2 L2,10" stroke="#c9d1d9" stroke-width="1.5"/></svg>fully evaporated (position where the diameter reached 0)</span>
+  </div>
+  <div class="final" id="final"></div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var P = /*__PAYLOAD__*/null;
+  if (!P) { return; }
+  var N = P.n, H = P.H, V0 = P.v0, U = P.U, LAM = P.lam, PHASE = 3.0;
+  var DLO = P.dLo, DHI = P.dHi, LDR = Math.log(DHI / DLO);
+
+  // viridis (matplotlib), sampled from 0.12 to 1 so the low end stays visible on a dark background
+  var VIR = [[72,26,108],[71,44,122],[65,68,135],[57,86,140],[49,104,142],[42,120,142],[35,137,142],
+             [31,154,138],[34,168,132],[53,183,121],[84,197,104],[122,209,81],[165,219,54],[210,226,27],[253,231,37]];
+  function cmap(d) {
+    var t = Math.min(1, Math.max(0, Math.log(Math.max(d, 1e-3) / DLO) / LDR)) * (VIR.length - 1);
+    var i = Math.min(VIR.length - 2, Math.floor(t)), f = t - i, a = VIR[i], b = VIR[i + 1];
+    return "rgb(" + Math.round(a[0] + f * (b[0] - a[0])) + "," + Math.round(a[1] + f * (b[1] - a[1])) + "," + Math.round(a[2] + f * (b[2] - a[2])) + ")";
+  }
+
+  // ---------- per-particle precompute (same closed form as spray_lab.particle_state)
+  var z3 = new Float64Array(N), x3 = new Float64Array(N), t3 = new Float64Array(N), col = new Array(N);
+  for (var i = 0; i < N; i++) {
+    var tau = P.tau[i], vt = P.vt[i], e = 1 - Math.exp(-PHASE);
+    t3[i] = PHASE * tau;
+    z3[i] = vt * t3[i] + (V0 - vt) * tau * e;
+    x3[i] = U * (t3[i] - tau * e);
+    col[i] = cmap(P.d0[i]);
+  }
+  function state(i, t) {
+    if (t > P.tEnd[i]) t = P.tEnd[i];
+    if (t < 0) t = 0;
+    var tau = P.tau[i], vt = P.vt[i], z, xw;
+    if (P.mode[i] === 0 || t <= t3[i]) {
+      var e = 1 - Math.exp(-t / tau);
+      z = vt * t + (V0 - vt) * tau * e;
+      xw = U * (t - tau * e);
+    } else {
+      var T = P.tS[i], b = P.beta[i];
+      var q = T > 0 ? Math.min(Math.max((t - t3[i]) / T, 0), 1) : 1;
+      z = z3[i] + P.zS[i] * q * (1 - b * q) / (1 - b);
+      xw = x3[i] + U * (t - t3[i]);
+    }
+    if (z > H) z = H;
+    return [P.nozX[P.noz[i]] + P.fan[i] * z + xw, H - z, Math.sqrt(Math.max(P.d0[i] * P.d0[i] - LAM * t, 0))];
+  }
+
+  // ---------- layout: plot area in CSS px
+  var cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+  var el = function (id) { return document.getElementById(id); };
+  var W = 800, Hc = 360, dpr = 1, L = 62, R = 96, T = 30, B = 44, sx = 1, sy = 1, YMAX = H * 1.15;
+  function layout() {
+    dpr = window.devicePixelRatio || 1;
+    W = Math.max(300, cv.parentElement.clientWidth - 0);
+    Hc = Math.round(Math.min(380, Math.max(230, W * 0.42)));
+    R = W < 520 ? 74 : 96; L = W < 520 ? 52 : 62;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(Hc * dpr); cv.style.height = Hc + "px";
+    sx = (W - L - R) / (P.xmax - P.xmin);
+    sy = (Hc - T - B) / YMAX;
+  }
+  function X(x) { return L + (x - P.xmin) * sx; }
+  function Y(h) { return Hc - B - h * sy; }
+  function niceStep(pxPerUnit, minPx) {
+    var c = [0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5];
+    for (var k = 0; k < c.length; k++) if (c[k] * pxPerUnit >= minPx) return c[k];
+    return 10;
+  }
+  function fmt(v, step) { var dec = step >= 1 ? 0 : (step >= 0.1 ? 1 : 2); return v.toFixed(dec); }
+
+  function drawAxes() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#0e1117"; ctx.fillRect(0, 0, W, Hc);
+    var x0 = X(P.xmin), x1 = X(P.xmax), y0 = Y(0), y1 = Y(YMAX);
+    // target swath shading
+    ctx.fillStyle = "rgba(61,220,151,0.07)";
+    ctx.fillRect(X(-P.targetHalf), y1, X(P.targetHalf) - X(-P.targetHalf), y0 - y1);
+    // grid + ticks
+    var xs = niceStep(sx, 56), ys = niceStep(sy, 32);
+    ctx.lineWidth = 1; ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = "#8a94a6";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (var v = Math.ceil(P.xmin / xs) * xs; v <= P.xmax + 1e-9; v += xs) {
+      var px = Math.round(X(v)) + 0.5;
+      ctx.strokeStyle = Math.abs(v) < 1e-9 ? "#2d3647" : "#1b222d";
+      ctx.beginPath(); ctx.moveTo(px, y1); ctx.lineTo(px, y0); ctx.stroke();
+      ctx.strokeStyle = "#5b6577"; ctx.beginPath(); ctx.moveTo(px, y0); ctx.lineTo(px, y0 + 4); ctx.stroke();
+      ctx.fillText(fmt(v, xs), px, y0 + 6);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (var h = 0; h <= YMAX + 1e-9; h += ys) {
+      var py = Math.round(Y(h)) + 0.5;
+      ctx.strokeStyle = "#1b222d"; ctx.beginPath(); ctx.moveTo(x0, py); ctx.lineTo(x1, py); ctx.stroke();
+      ctx.strokeStyle = "#5b6577"; ctx.beginPath(); ctx.moveTo(x0 - 4, py); ctx.lineTo(x0, py); ctx.stroke();
+      ctx.fillText(fmt(h, ys), x0 - 6, py);
+    }
+    // axis lines
+    ctx.strokeStyle = "#5b6577"; ctx.beginPath(); ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1, y0); ctx.stroke();
+    // target swath on the x-axis
+    ctx.fillStyle = "rgba(61,220,151,0.55)"; ctx.fillRect(X(-P.targetHalf), y0 - 1, X(P.targetHalf) - X(-P.targetHalf), 3);
+    // axis titles
+    ctx.fillStyle = "#c9d1d9"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText("Lateral position from boom centre (m)", (x0 + x1) / 2, Hc - 4);
+    var ex = sy / sx;
+    ctx.save(); ctx.translate(13, (y0 + y1) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle";
+    ctx.fillText("Height above target (m)" + (ex > 1.05 ? "  [vertical ×" + ex.toFixed(1) + "]" : ""), 0, 0);
+    ctx.restore();
+    // drift threshold lines
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = "#ef5b5b"; ctx.lineWidth = 1.2;
+    [-P.thrLine, P.thrLine].forEach(function (xv) {
+      if (xv < P.xmin || xv > P.xmax) return;
+      var px = Math.round(X(xv)) + 0.5; ctx.beginPath(); ctx.moveTo(px, y1); ctx.lineTo(px, y0); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    // labels run along the dashed lines, on the side facing the swath
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = "#ef8f8f";
+    var lab = "drift threshold (" + P.thr.toFixed(1) + " m)";
+    [-P.thrLine, P.thrLine].forEach(function (xv, k) {
+      if (xv < P.xmin || xv > P.xmax) return;
+      ctx.save(); ctx.translate(X(xv) + (k === 0 ? 4 : -4), Y(YMAX * 0.3)); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "left"; ctx.textBaseline = k === 0 ? "top" : "bottom";
+      ctx.fillText(lab, 0, 0); ctx.restore();
+    });
+    ctx.fillStyle = "#6fcf9f"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText("target swath (" + P.nozX.length + " nozzles × " + (P.spacing * 100).toFixed(0) + " cm)",
+      X(-P.targetHalf) + 4, y0 - 12);
+    // boom line + nozzles
+    var nz = P.nozX;
+    ctx.strokeStyle = "#8a94a6"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X(nz[0]) - 6, Y(H)); ctx.lineTo(X(nz[nz.length - 1]) + 6, Y(H)); ctx.stroke();
+    ctx.fillStyle = "#c9d1d9";
+    for (var j = 0; j < nz.length; j++) {
+      var nx = X(nz[j]), ny = Y(H);
+      ctx.beginPath(); ctx.moveTo(nx - 5, ny - 6); ctx.lineTo(nx + 5, ny - 6); ctx.lineTo(nx, ny + 2); ctx.closePath(); ctx.fill();
+    }
+    // colorbar
+    var cbx = W - R + 18, cbw = 11, cby0 = y1, cby1 = y0;
+    for (var p = 0; p <= 60; p++) {
+      var f = p / 60, d = DLO * Math.exp(f * LDR);
+      ctx.fillStyle = cmap(d); ctx.fillRect(cbx, cby1 - f * (cby1 - cby0) - (cby1 - cby0) / 60 - 0.5, cbw, (cby1 - cby0) / 60 + 1);
+    }
+    ctx.strokeStyle = "#5b6577"; ctx.lineWidth = 1; ctx.strokeRect(cbx + 0.5, cby0 + 0.5, cbw, cby1 - cby0);
+    ctx.fillStyle = "#8a94a6"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.font = "11px system-ui, sans-serif";
+    [50, 100, 200, 500, 1000].forEach(function (d) {
+      if (d < DLO || d > DHI) return;
+      var py = cby1 - Math.log(d / DLO) / LDR * (cby1 - cby0);
+      ctx.strokeStyle = "#8a94a6"; ctx.beginPath(); ctx.moveTo(cbx + cbw, py); ctx.lineTo(cbx + cbw + 3, py); ctx.stroke();
+      ctx.fillText(String(d), cbx + cbw + 5, py);
+    });
+    ctx.save(); ctx.translate(W - 8, (cby0 + cby1) / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#c9d1d9"; ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText("Initial diameter (µm, log scale)", 0, 0); ctx.restore();
+  }
+
+  function drawAnnotations() {
+    var x0 = X(P.xmin) + 8, y = Y(YMAX) - 14;
+    ctx.font = "12px system-ui, sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    if (Math.abs(U) > 0.05) {
+      var len = 34, ax0 = U > 0 ? x0 : x0 + len, ax1 = U > 0 ? x0 + len : x0;
+      ctx.strokeStyle = "#e6edf3"; ctx.fillStyle = "#e6edf3"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(ax0, y); ctx.lineTo(ax1, y); ctx.stroke();
+      var s = U > 0 ? 1 : -1;
+      ctx.beginPath(); ctx.moveTo(ax1, y); ctx.lineTo(ax1 - s * 7, y - 4); ctx.lineTo(ax1 - s * 7, y + 4); ctx.closePath(); ctx.fill();
+      ctx.fillText("crosswind U = " + Math.abs(U).toFixed(1) + " m/s", x0 + len + 8, y);
+    } else {
+      ctx.fillStyle = "#e6edf3"; ctx.fillText("crosswind U = 0 m/s", x0, y);
+    }
+    var ua = P.summary.windAlong;
+    if (Math.abs(ua) > 0.05) {
+      ctx.fillStyle = "#8a94a6";
+      ctx.fillText("along-track component " + Math.abs(ua).toFixed(1) + " m/s (" + (ua < 0 ? "headwind" : "tailwind") + ", out of plane)", x0, y + 17);
+    }
+    ctx.textAlign = "right"; ctx.fillStyle = "#e6edf3"; ctx.font = "600 13px ui-monospace, Consolas, monospace";
+    ctx.fillText("t = " + simT.toFixed(2) + " s", X(P.xmax) - 8, y);
+  }
+
+  // ---------- state
+  var simT = 0, speed = P.slowmo, playing = true, ended = false, last = null, dragging = false;
+  var scrub = el("scrub"); scrub.max = P.tFinal.toFixed(3);
+  el("thrv").textContent = P.thr.toFixed(1) + " m";
+
+  function radius(d) { return d <= 0 ? 0 : 1.1 + 2.4 * Math.min(1, Math.max(0, Math.log(d / DLO) / LDR)); }
+
+  function draw() {
+    drawAxes();
+    var y0 = Y(0), sL = 0, sB = 0, sE = 0, sA = 0, rel = 0;
+    ctx.save(); ctx.beginPath(); ctx.rect(X(P.xmin), Y(YMAX) - 2, X(P.xmax) - X(P.xmin), Y(0) - Y(YMAX) + 8); ctx.clip();
+    for (var i = 0; i < N; i++) {
+      var ft = simT - P.t0[i];
+      if (ft < 0) continue;
+      var w = P.w[i]; rel += w;
+      var te = P.tEnd[i], f = P.fate[i];
+      if (ft < te && !ended) {           // airborne: faint trace + point
+        sA += w;
+        var s1 = state(i, ft), px = X(s1[0]), py = Y(s1[1]);
+        ctx.strokeStyle = col[i]; ctx.globalAlpha = 0.16; ctx.lineWidth = 0.8; ctx.beginPath();
+        for (var k = 0; k <= 10; k++) { var sk = state(i, ft * k / 10); if (k === 0) ctx.moveTo(X(sk[0]), Y(sk[1])); else ctx.lineTo(X(sk[0]), Y(sk[1])); }
+        ctx.stroke();
+        ctx.globalAlpha = 0.95; ctx.fillStyle = col[i];
+        ctx.beginPath(); ctx.arc(px, py, radius(s1[2]), 0, 6.2832); ctx.fill();
+        continue;
+      }
+      var r3 = P.r3[i];
+      if (f === 0) sL += w * r3; else if (f === 1) sB += w * r3;
+      sE += w * (1 - r3);
+      if (ft < te) continue;               // only resolved by the final snapshot
+      ctx.globalAlpha = 0.9;
+      if (f === 0) {
+        var xl = X(P.xLand[i]); ctx.strokeStyle = col[i]; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(xl, y0); ctx.lineTo(xl, y0 - 6); ctx.stroke();
+      } else if (f === 1) {
+        ctx.strokeStyle = col[i]; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(X(P.xLand[i]), y0 - 4, 3, 0, 6.2832); ctx.stroke();
+      } else {
+        var se = state(i, te), ex = X(se[0]), ey = Y(se[1]);
+        ctx.strokeStyle = "#c9d1d9"; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(ex - 2.5, ey - 2.5); ctx.lineTo(ex + 2.5, ey + 2.5); ctx.moveTo(ex + 2.5, ey - 2.5); ctx.lineTo(ex - 2.5, ey + 2.5); ctx.stroke();
+      }
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+    drawAnnotations();
+
+    var S = P.summary, pL, pB, pE, pA;
+    if (ended) { pL = S.landed; pB = S.blown; pE = S.evaporated; pA = 0; }
+    else if (rel > 0) { pL = 100 * sL / rel; pB = 100 * sB / rel; pE = 100 * sE / rel; pA = 100 * sA / rel; }
+    else { pL = pB = pE = pA = 0; }
+    el("bL").style.width = pL + "%"; el("bB").style.width = pB + "%"; el("bE").style.width = pE + "%"; el("bA").style.width = pA + "%";
+    el("cL").textContent = pL.toFixed(1); el("cB").textContent = pB.toFixed(1); el("cE").textContent = pE.toFixed(1); el("cA").textContent = pA.toFixed(1);
+    el("tval").textContent = simT.toFixed(2) + " s";
+    if (!dragging) scrub.value = simT.toFixed(3);
+    el("final").textContent = ended ?
+      "Final (simulator, by volume): deposited on target " + S.landed.toFixed(1) + " %, drifted " + S.blown.toFixed(1) +
+      " %, evaporated " + S.evaporated.toFixed(1) + " % → spray drift " + S.drift.toFixed(1) + " %; card coverage " +
+      S.coverage.toFixed(1) + " % (" + S.rating + ", target " + S.target.toFixed(0) + " %)." : "";
+  }
+
+  function frame(ts) {
+    if (last === null) last = ts;
+    var dt = Math.min(0.1, (ts - last) / 1000); last = ts;
+    if (playing && !ended && !dragging) {
+      simT += dt * speed;
+      if (simT >= P.tFinal) { simT = P.tFinal; ended = true; el("play").textContent = "Play"; }
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function setSpeed(s) {
+    speed = s;
+    document.querySelectorAll("#speeds button").forEach(function (b) { b.classList.toggle("on", parseFloat(b.dataset.s) === s); });
+    el("slow").textContent = s === 1 ? "real time" : "playback " + s + "× real time";
+  }
+  function replay() { simT = 0; ended = false; playing = true; el("play").textContent = "Pause"; }
+  el("play").onclick = function () {
+    if (ended) { replay(); return; }
+    playing = !playing; el("play").textContent = playing ? "Pause" : "Play";
+  };
+  el("replay").onclick = replay;
+  document.querySelectorAll("#speeds button").forEach(function (b) { b.onclick = function () { setSpeed(parseFloat(b.dataset.s)); }; });
+  scrub.addEventListener("input", function () {
+    dragging = true; simT = parseFloat(scrub.value); ended = simT >= P.tFinal - 1e-6;
+  });
+  scrub.addEventListener("change", function () { dragging = false; });
+  scrub.addEventListener("pointerup", function () { dragging = false; });
+
+  setSpeed(speed);
+  layout();
+  if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(cv.parentElement);
+  window.addEventListener("resize", layout);
+  // debug / test hook: seek(t) jumps to simulated time t and pauses
+  window.__sprayLab = { state: state, payload: P, get t() { return simT; }, get ended() { return ended; },
+    seek: function (t) { simT = Math.min(Math.max(0, t), P.tFinal); ended = simT >= P.tFinal; playing = false;
+      el("play").textContent = "Play"; draw(); } };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

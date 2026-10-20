@@ -1,0 +1,123 @@
+{
+  "n": 200,
+  "seed": 0,
+  "c_req": 30.0,
+  "speed_options_kmh": [
+    8.0,
+    10.0,
+    12.0,
+    14.0,
+    16.0,
+    18.0,
+    20.0,
+    22.0,
+    24.0,
+    26.0,
+    28.0,
+    30.0
+  ],
+  "open_loop": {
+    "oracle": {
+      "off": {
+        "success": 0.385,
+        "mean_drift": 0.010592461378934189,
+        "mean_gpa": 17.265431520726978,
+        "infeasible_frac": 0.0
+      },
+      "on_band_0.15": {
+        "success": 0.305,
+        "mean_drift": 0.008732906125100439,
+        "mean_gpa": 16.558484530087636,
+        "infeasible_frac": 0.0,
+        "mean_speed_ratio": 1.0035156094353201,
+        "frac_speed_changed": 0.69,
+        "min_ratio": 0.85031659997956,
+        "max_ratio": 1.1466755335998982
+      },
+      "on_band_0.25": {
+        "success": 0.34,
+        "mean_drift": 0.00851667937318969,
+        "mean_gpa": 16.28168200123361,
+        "infeasible_frac": 0.0,
+        "mean_speed_ratio": 1.0239884395357393,
+        "frac_speed_changed": 0.785,
+        "min_ratio": 0.7646016062128794,
+        "max_ratio": 1.2494116763481529
+      },
+      "on_band_0.4": {
+        "success": 0.275,
+        "mean_drift": 0.007420505638501154,
+        "mean_gpa": 16.315714375511224,
+        "infeasible_frac": 0.0,
+        "mean_speed_ratio": 1.073208360708571,
+        "frac_speed_changed": 0.845,
+        "min_ratio": 0.6060295014603382,
+        "max_ratio": 1.3969674333746362
+      }
+    },
+    "spray": {
+      "off": {
+        "success": 0.935,
+        "mean_drift": 0.013129837998127414,
+        "mean_gpa": 24.781648139871788,
+        "infeasible_frac": 0.0
+      },
+      "on_band_0.15": {
+        "success": 0.94,
+        "mean_drift": 0.012451948063972828,
+        "mean_gpa": 23.833570663444142,
+        "infeasible_frac": 0.0,
+        "mean_speed_ratio": 0.9928359508060437,
+        "frac_speed_changed": 0.665,
+        "min_ratio": 0.8506786705652737,
+        "max_ratio": 1.1466755335998982
+      },
+      "on_band_0.25": {
+        "success": 0.9,
+        "mean_drift": 0.011636055786550253,
+        "mean_gpa": 23.27789676222997,
+        "infeasible_frac": 0.0,
+        "mean_speed_ratio": 0.9777899580771333,
+        "frac_speed_changed": 0.865,
+        "min_ratio": 0.7522940157060999,
+        "max_ratio": 1.2458066298140538
+      },
+      "on_band_0.4": {
+        "success": 0.915,
+        "mean_drift": 0.011119536834123098,
+        "mean_gpa": 22.83166358236972,
+        "infeasible_frac": 0.0,
+        "mean_speed_ratio": 0.9545887375532849,
+        "frac_speed_changed": 0.91,
+        "min_ratio": 0.6010198526823286,
+        "max_ratio": 1.3975280046268235
+      }
+    }
+  },
+  "closed_loop_oracle_nominal_med": {
+    "off/oracle": {
+      "frac_met": 1.0,
+      "mean_shortfall_pp": 0.0,
+      "mean_volume_gpa": 21.673010538968793,
+      "mean_drift_frac": 0.012883755614452375
+    },
+    "off/fast": {
+      "frac_met": 0.9541666666666665,
+      "mean_shortfall_pp": 0.07369770840842653,
+      "mean_volume_gpa": 24.189230590866426,
+      "mean_drift_frac": 0.015303998022938485
+    },
+    "on_band_0.25/oracle": {
+      "frac_met": 1.0,
+      "mean_shortfall_pp": 0.0,
+      "mean_volume_gpa": 19.934298856827358,
+      "mean_drift_frac": 0.013469260757626745
+    },
+    "on_band_0.25/fast": {
+      "frac_met": 0.9166666666666665,
+      "mean_shortfall_pp": 0.1312044053291199,
+      "mean_volume_gpa": 23.02360255895842,
+      "mean_drift_frac": 0.014117595369741233
+    }
+  }
+}

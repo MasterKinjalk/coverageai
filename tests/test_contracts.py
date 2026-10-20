@@ -46,5 +46,5 @@ def test_smoke_pass(tmp_path):
     logs = smoke(5, out=out)
     assert len(logs) == 5
     rows = [json.loads(l) for l in out.read_text().splitlines()]
-    assert rows[0]["schema_version"] == "1.0"
+    assert rows[0]["schema_version"] == "1.2"
     assert set(rows[0]["x"]) == set(Conditions.__dataclass_fields__)

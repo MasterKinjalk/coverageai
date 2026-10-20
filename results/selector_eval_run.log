@@ -1,0 +1,2 @@
+[oracle] selector success 0.385 drift 0.0106 gpa 17.27 | best_fixed success 1.000 drift 0.0171 gpa 52.54 | achievable 1.000 | runtime {'total_mean': 557.7353659970686, 'model_mean': 554.5427280000877, 'selector_only_mean': 3.1926379969809204}
+[spray] selector success 0.970 drift 0.0131 gpa 24.78 | best_fixed success 1.000 drift 0.0171 gpa 52.54 | achievable 1.000 | runtime {'total_mean': 19.806721997447312, 'model_mean': 17.433695994550362, 'selector_only_mean': 2.3730260028969496}

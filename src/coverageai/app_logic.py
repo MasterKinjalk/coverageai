@@ -30,11 +30,12 @@ from coverageai import scenarios
 from coverageai.config import px_per_mm, spec
 from coverageai.contracts import (Conditions, Derived, Outcome, Prediction, Setting,
                                   coverage_class)
-from coverageai.loop import (Modules, POLICIES, default_mock_modules, run_pass, segment_rng,
-                             summarize)
+from coverageai.loop import (Modules, POLICIES, default_mock_modules, run_pass,
+                             run_passes_slow, segment_rng, summarize)
 
 MISMATCH_LEVELS = ("none", "low", "med", "high")
-APP_POLICIES = ("open", "fast", "oracle", "best_fixed")
+APP_POLICIES = ("open", "fast", "fast_slow", "oracle", "oracle_card", "best_fixed")
+N_LEARN_PASSES = 3          # earlier "learning" passes before the displayed fast_slow pass
 MODEL_CHOICES = ("oracle_nominal", "spray", "mock")
 VERIFIER_CHOICES = ("perfect", "noisy", "b0", "b1")
 CLASS_ORDER = ("acceptable", "marginal", "critical")
@@ -179,8 +180,14 @@ def best_fixed_for(modules: Modules, conds: Sequence[Conditions], c_req: float) 
 def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str, seed: int,
                      mismatch: str, c_req: float, lam: float | None = None,
                      fixed_setting: Setting | None = None, render: bool | None = None,
-                     pass_id: str | None = None) -> PassResult:
+                     pass_id: str | None = None, n_learn: int = N_LEARN_PASSES) -> PassResult:
     """Run one pass and keep what the UI needs (selector records, timing).
+
+    ``fast_slow``: runs ``n_learn`` earlier passes (seeds ``seed + 1009 i``, no card
+    rendering) through ``loop.run_passes_slow`` so the slow loop learns a residual
+    correction, then the displayed pass (seed ``seed + 1009 n_learn``) with the fitted
+    ``ResidualCorrectedModel`` as ``modules.model``. ``meta["passes"]`` holds a per-pass
+    summary (the last row is the displayed pass).
 
     Starts a simulator pass (persistent canopy/wear + AR(1) gusts) when the simulator
     supports it, applies ``lam`` to the selector for the duration of the call, and
@@ -200,19 +207,65 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     if lam is not None and old_lam is not None:
         sel.lam = float(lam)
     t0 = time.perf_counter()
+    meta: dict = {}
+    run_seed = int(seed)
     try:
+        if policy == "fast_slow":
+            run_seed, passes = _learn_between_passes(mods, conds, int(seed), mismatch,
+                                                     float(c_req), int(n_learn))
+            meta["passes"] = passes
         if hasattr(mods.simulator, "begin_pass"):
-            mods.simulator.begin_pass(int(seed), mismatch)
-        logs = run_pass(list(conds), policy, mods, int(seed), mismatch, float(c_req),
-                        pass_id or f"{policy}_s{seed}", render=vision,
+            mods.simulator.begin_pass(run_seed, mismatch)
+        logs = run_pass(list(conds), policy, mods, run_seed, mismatch, float(c_req),
+                        pass_id or f"{policy}_s{run_seed}", render=vision,
                         fixed_setting=fixed_setting)
     finally:
         if lam is not None and old_lam is not None:
             sel.lam = old_lam
-    return PassResult(logs=logs, conds=list(conds), policy=policy, seed=int(seed),
+    if policy == "fast_slow":
+        meta["passes"].append(_pass_summary(len(meta["passes"]) + 1, logs, float(c_req),
+                                            mods.model, displayed=True))
+    return PassResult(logs=logs, conds=list(conds), policy=policy, seed=run_seed,
                       mismatch=mismatch, c_req=float(c_req), lam=lam, modules=mods,
                       records=rec.records, fixed_setting=fixed_setting, used_vision=vision,
-                      elapsed_s=time.perf_counter() - t0)
+                      elapsed_s=time.perf_counter() - t0, meta=meta)
+
+
+def _pass_summary(i: int, logs: Sequence, c_req: float, model, displayed: bool = False) -> dict:
+    cov = np.array([l.outcome.coverage_pct for l in logs])
+    err = np.array([abs(l.outcome.coverage_pct - l.corrected_pred_cov) for l in logs])
+    return {"pass": i, "met_pct": 100.0 * float((cov >= c_req).mean()),
+            "mean_error_pp": float(err.mean()),
+            "slow_offset_pp": float(getattr(model, "global_corr", 0.0)),
+            "displayed": displayed}
+
+
+def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int, mismatch: str,
+                          c_req: float, n_learn: int) -> tuple[int, list[dict]]:
+    """Slow loop: ``n_learn`` passes (no rendering) through ``run_passes_slow``, then one
+    more fit on the last pass so ``mods.model`` is the ResidualCorrectedModel as it stands
+    at the displayed pass. Returns (seed of the displayed pass, summaries of the earlier
+    passes). Mutates only ``mods`` (a private copy), never the cached module stack."""
+    from coverageai.feedback import ResidualCorrectedModel
+    corr = ResidualCorrectedModel(mods.model, mods.derive_fn)
+    passes: list[dict] = []
+    if n_learn > 0:
+        logs = run_passes_slow(list(conds), mods, seed, mismatch, c_req, n_passes=n_learn,
+                               render=False, correction=corr)
+        by_pass: dict[int, list] = {}
+        for lg in logs:
+            by_pass.setdefault(int(lg.extra["slow_pass"]), []).append(lg)
+        for i in sorted(by_pass):
+            passes.append(_pass_summary(i + 1, by_pass[i], c_req, corr))
+            passes[-1]["slow_offset_pp"] = float(by_pass[i][0].extra.get("slow_global_corr", 0.0))
+        # run_passes_slow does not refit after its last pass: do it here
+        last = by_pass[max(by_pass)]
+        corr.fit([(lg.x, lg.u, Outcome(lg.meas.coverage_pct, lg.outcome.deposition_ul_cm2,
+                                       lg.outcome.drift_frac, lg.outcome.displacement_mm,
+                                       lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None
+                                       else lg.outcome.stains_per_cm2, None)) for lg in last])
+    mods.model = corr
+    return seed + 1009 * n_learn, passes
 
 
 # --------------------------------------------------------------------- KPIs
@@ -338,7 +391,15 @@ def explain_choice(res: PassResult, k: int) -> list[str]:
                 "predicted requirement-met rate over this scenario (ties: lowest drift)."]
     if res.policy == "oracle":
         out.append("Oracle: the selector queried the true simulator, including the hidden "
-                   "mismatch realization of this segment. Upper bound, not deployable.")
+                   "mismatch realization of this segment (gusts, canopy, nozzle wear) but not the "
+                   "random card-to-card spread. Fair upper bound, not deployable.")
+    if res.policy == "oracle_card":
+        out.append("Card-aware oracle: the selector knew the hidden mismatch AND this card's random "
+                   "spread. Unreachable bound, not deployable.")
+    if res.policy == "fast_slow":
+        n_prev = max(len(res.meta.get("passes", [])) - 1, 0)
+        out.append(f"Learning between passes: a correction learned from {n_prev} earlier pass(es) "
+                   "was added to the model before this pass.")
     if not info:
         return out + ["No selector record available for this segment."]
     if "n_candidates" in info:
@@ -462,15 +523,16 @@ def overlay_mask(image: np.ndarray, mask: np.ndarray, color=(255, 64, 64), alpha
 
 def compare_policies(modules: Modules, conds: Sequence[Conditions], seed: int, mismatch: str,
                      c_req: float, lam: float | None = None,
-                     policies: Sequence[str] = ("open", "fast", "oracle"),
-                     render: bool = False, fixed_setting: Setting | None = None
+                     policies: Sequence[str] = ("open", "fast", "fast_slow", "oracle"),
+                     render: bool = False, fixed_setting: Setting | None = None,
+                     n_learn: int = N_LEARN_PASSES
                      ) -> dict[str, PassResult]:
     """Run each policy on the same conditions, seed and hidden mismatch realization."""
     out = {}
     for p in policies:
         out[p] = run_pass_wrapper(modules, conds, p, seed, mismatch, c_req, lam,
                                   fixed_setting=fixed_setting if p == "best_fixed" else None,
-                                  render=render)
+                                  render=render, n_learn=n_learn)
     return out
 
 

@@ -153,7 +153,7 @@ def test_nozzle_helpers():
 
 
 def test_presets_available_for_app():
-    assert set(al.APP_POLICIES) <= {"open", "fast", "fast_slow", "oracle", "best_fixed"}
+    assert set(al.APP_POLICIES) <= set(al.POLICIES)
     assert scenarios.list_presets()
 
 
@@ -166,3 +166,41 @@ def test_b0_verifier_pass_and_overlay():
     cv = al.replay_card(r, 2)
     assert cv.meas is not None and cv.pred_mask is not None and cv.pred_mask.dtype == bool
     assert abs(cv.meas.coverage_pct - r.logs[2].meas.coverage_pct) < 1e-6
+
+
+def test_noisy_verifier_replay_card():
+    """The image-free noisy verifier can still read a replayed card (B0 under the hood)."""
+    mods = al.build_modules_adapter("oracle_nominal", "noisy")
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=3)
+    r = al.run_pass_wrapper(mods, conds, "fast", 4, "med", 30.0)
+    cv = al.replay_card(r, 1)
+    assert cv.meas is not None and 0.0 <= cv.meas.coverage_pct <= 100.0
+    assert cv.pred_mask is not None and cv.pred_mask.dtype == bool
+    # the logged (image-free) reading and the image reading are both within a few pp of truth
+    assert abs(cv.meas.coverage_pct - cv.outcome.coverage_pct) < 8.0
+
+
+def test_fast_slow_runs_learning_passes_and_replays():
+    mods = al.build_modules_adapter("oracle_nominal", "perfect")
+    conds = al.make_conditions("gusty_afternoon", 3, n_segments=6)
+    orig_model = mods.model
+    r = al.run_pass_wrapper(mods, conds, "fast_slow", 3, "high", 30.0, n_learn=2)
+    assert mods.model is orig_model                       # cached stack untouched
+    assert r.policy == "fast_slow" and r.seed == 3 + 1009 * 2   # last pass is the one returned
+    assert all(lg.policy == "fast_slow" and lg.seed == r.seed for lg in r.logs)
+    assert type(r.modules.model).__name__ == "ResidualCorrectedModel"
+    assert r.modules.model.n_records == 2 * len(conds)
+    ps = r.meta["passes"]
+    assert [p["pass"] for p in ps] == [1, 2, 3] and ps[-1]["displayed"] and not ps[0]["displayed"]
+    assert all(0 <= p["met_pct"] <= 100 and p["mean_error_pp"] >= 0 for p in ps)
+    for k in (0, 4):
+        assert al.replay_card(r, k).consistent
+    assert al.run_pass_wrapper(mods, conds, "fast_slow", 3, "high", 30.0, n_learn=0).seed == 3
+
+
+def test_app_policies_all_run_and_oracle_card_in_compare(modules):
+    assert {"fast_slow", "oracle", "oracle_card"} <= set(al.APP_POLICIES)
+    conds = al.make_conditions("gusty_afternoon", 2, n_segments=5)
+    res = al.compare_policies(modules, conds, 2, "med", 30.0, policies=al.APP_POLICIES, n_learn=1)
+    assert list(res) == list(al.APP_POLICIES)
+    assert len(al.comparison_table(res)) == len(al.APP_POLICIES)
