@@ -25,6 +25,9 @@ vision = [
     "torchvision>=0.19",
     "segmentation-models-pytorch>=0.3.4",
 ]
+gpu = [
+    "xgboost>=3.0",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.3"]

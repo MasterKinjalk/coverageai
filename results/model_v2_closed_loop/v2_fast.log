@@ -1,0 +1,19 @@
+[   54s] best_fixed settings done (80)
+[   67s] grid cells 20/320
+[   80s] grid cells 40/320
+[   92s] grid cells 60/320
+[  107s] grid cells 80/320
+[  127s] grid cells 100/320
+[  150s] grid cells 120/320
+[  170s] grid cells 140/320
+[  186s] grid cells 160/320
+[  205s] grid cells 180/320
+[  219s] grid cells 200/320
+[  238s] grid cells 220/320
+[  257s] grid cells 240/320
+[  275s] grid cells 260/320
+[  294s] grid cells 280/320
+[  311s] grid cells 300/320
+[  323s] grid cells 320/320
+wrote results\model_v2_closed_loop\v2_fast\results\closed_loop_spray.json (325s)
+combined outputs written to results\model_v2_closed_loop\v2_fast\results and results\model_v2_closed_loop\v2_fast\figures
