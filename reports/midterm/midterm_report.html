@@ -61,7 +61,7 @@
 
 <h1>AI-Driven Closed-Loop Precision Spraying<br>for Real-Time Application Optimization</h1>
 <div class="byline">ABE 598 Digital Agriculture &middot; Midterm Project Report &middot; due October 21, 2026<br>
-Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot; Kinjalk Parth<br>
+Team CoverageVision AI &middot; Emery Brewer &middot; Junjie Ao &middot; Kinjalk Parth<br>
 <span style="font-size:8.3pt">Built October 20, 2026 from the results files in the repository.</span></div>
 
 <h2>1 Summary</h2>
@@ -147,12 +147,38 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 </figure>
 
 <h3>2.2 Nozzle catalog</h3>
-<p><code>data/catalog/nozzles.csv</code> holds 316 chart rows for five families (TP65 50, XR 72, DGX40 24, ULD 80, 3D 90; 43 family-size combinations). <code>catalog.py</code> interpolates flow along <i>Q</i> &prop; &radic;<i>P</i>, recomputes GPA at 20 in spacing, and generates 547 candidate settings on a 5 psi grid. The validator reports 0 violations on four checks (square-root law, sampled GPA cells, droplet class monotone in pressure, ranges). Compromises: TP65 droplet class uses the 80&deg; column (D3), DGX40 contributes flow only (D4), ULD and 3D rows come from manufacturer sheets [12], spray angles are nominal (D5).</p>
+<p><code>data/catalog/nozzles.csv</code> holds 316 chart rows for five families (TP65, XR110, DGX40, ULD120, 3D90; 43 family-size combinations). <code>catalog.py</code> interpolates flow along <i>Q</i> &prop; &radic;<i>P</i>, recomputes GPA at 20 in spacing, and generates 547 candidate settings on a 5 psi grid. The validator reports 0 violations on four checks (square-root law, sampled GPA cells, droplet class monotone in pressure, ranges). Compromises: TP65 droplet class uses the 80&deg; column (D3), DGX40 contributes flow only (D4), ULD and 3D rows come from manufacturer sheets [12], spray angles are nominal (D5).</p>
+
 
 <h3>2.3 Simulator</h3>
-<p>The simulator composes first-order relationships and is not a validated drift model. Flow follows <i>Q</i> = <i>Q</i><sub>ref</sub>&radic;(<i>P</i>/<i>P</i><sub>ref</sub>), application rate GPA = 5940&middot;GPM/(MPH&middot;<i>W</i>) [4]. The volume spectrum is log-normal with VMD set by the ASABE S572.3 class [3]. Terminal velocity uses a Schiller&ndash;Naumann drag correlation [9]; evaporation follows the <i>d</i><sup>2</sup> law [10] with Stull's wet-bulb approximation [11]. Droplets leave the nozzle at <i>v</i><sub>0</sub> = 0.6&radic;(2<i>P</i>/&rho;<sub>w</sub>) and relax toward <i>V</i><sub>t</sub> under linear drag (D10); size bins displaced over 0.5 m cross-track are drift. Coverage uses a Boolean (Poisson) model [5],</p>
+
+<p><b>Parameter Integration and Physical Relationships.</b>
+The physics-informed simulator integrates environmental, machine, and spray-system parameters to estimate application performance under varying operating conditions. Environmental inputs include wind speed, wind direction, temperature, and relative humidity, which influence droplet transport and evaporation. Machine parameters include travel speed and boom height, which affect application rate and droplet displacement. Spray-system inputs include nozzle family, nozzle size, and operating pressure, with flow rate, droplet classification, and nominal spray angle derived from the manufacturer catalog described in Section 2.2.</p>
+
+<p>These parameters interact through physical relationships rather than acting as independent predictors. Wind speed and direction determine cross-track and along-track wind components relative to machine travel, while boom height influences the distance droplets travel before deposition. Droplet size affects terminal settling velocity, evaporation, and susceptibility to wind displacement. Nozzle configuration and pressure influence flow rate and droplet characteristics, connecting operating conditions to predicted coverage and drift.</p>
+
+<p><b>Application Rate and Flow Relationships.</b>
+Application rate is calculated from nozzle flow rate, machine travel speed, and nozzle spacing [4]:</p>
+
+<p class="eq">GPA = 5940<i>Q</i>/(<i>vW</i>)</p>
+
+<p>where <i>Q</i> is nozzle flow rate (GPM), <i>v</i> is travel speed (MPH), and <i>W</i> is nozzle spacing (inches), fixed at 20 inches for the modeled boom configuration. For example, a nozzle operating at 0.40 GPM and 5 MPH produces an application rate of 23.76 GPA.</p>
+
+<p>For a selected nozzle, flow rate varies approximately with the square root of operating pressure:</p>
+
+<p class="eq"><i>Q</i> = <i>Q</i><sub>ref</sub>&radic;(<i>P</i>/<i>P</i><sub>ref</sub>)</p>
+
+<p>where <i>Q</i><sub>ref</sub> is the reference flow rate at pressure <i>P</i><sub>ref</sub>, and <i>P</i> is operating pressure. At constant travel speed, increasing pressure increases nozzle flow and application rate, while increasing travel speed reduces application rate at constant flow. Nozzle-dependent droplet characteristics are provided through the catalog, allowing changes in operating conditions to influence modeled coverage and drift.</p>
+
+<p><b>Modeling Assumptions and Simplifications.</b>
+The simulator assumes fixed 20-inch nozzle spacing and uses the five nozzle families represented in the manufacturer catalog. Droplet-size distributions are approximated using a log-normal distribution based on ASABE S572.3 spray classifications [3]. Droplet transport and evaporation are modeled using simplified physical relationships rather than computational fluid dynamics. Simulated drift is defined using a 0.5 m cross-track displacement threshold rather than direct measurement of field-scale off-target deposition. WSP coverage assumes spatially random droplet placement, with uncertainty in stain formation represented by a per-card spread factor. Hidden disturbances, including wind gusts, canopy interception, and nozzle wear, are included to evaluate robustness under imperfect operating information. These assumptions support simulation-based evaluation but do not establish field validation.</p>
+
+<p>The simulator composes first-order relationships and is not a validated drift model. The volume spectrum is log-normal with VMD set by the ASABE S572.3 class [3]. Terminal velocity uses a Schiller&ndash;Naumann drag correlation [9]; evaporation follows the <i>d</i><sup>2</sup> law [10] with Stull's wet-bulb approximation [11]. Droplets leave the nozzle at <i>v</i><sub>0</sub> = 0.6&radic;(2<i>P</i>/&rho;<sub>w</sub>) and relax toward <i>V</i><sub>t</sub> under linear drag (D10); size bins displaced over 0.5 m cross-track are drift. Coverage uses a Boolean (Poisson) model [5],</p>
+
 <p class="eq"><i>C</i> = 1 &minus; exp(&minus;<i>N</i>&middot;E[&pi;<i>s</i><sup>2</sup>/4]/<i>A</i>), &nbsp; <i>s</i> = SF&middot;<i>d</i>, &nbsp; SF ~ U[1.6, 2.2] per card [6], &nbsp; <i>d</i> &ge; 50 &micro;m.</p>
+
 <p>The per-card spread factor SF is the irreducible noise that recurs throughout this report: it is drawn when the card is sprayed, so no controller can know it in advance. Hidden mismatch (AR(1) gusts, canopy interception, nozzle wear) is set by one level (none, low, med, high) and never seen by the model. Tests cover the anchors in Table 1, monotone trends (Figure 2), the Boolean formula against Monte Carlo placement, and seeded determinism.</p>
+
 <div class="twoup" style="align-items:flex-start"><div style="flex:1"><div class="caption"><b>Table 1.</b> Physical anchors checked by tests (values computed from the code at build time; drift at 15 GPA, 2 m/s crosswind, <i>H</i> = 0.5 m, 25 &deg;C, 50% RH, 40 psi, mean of 6 seeds). Plausibility checks, not field validation.</div>
 <table>
 <tr><th>Quantity</th><th>Reference or accepted band</th><th class="num">Simulator</th></tr>
@@ -260,9 +286,9 @@ Team CoverageVision AI &middot; Emery Brewer (remote) &middot; Junjie Ao &middot
 <div class="caption"><b>Table 12.</b> Contribution table (course template: member, responsibilities, work completed, next milestone).</div>
 <table class="big">
 <tr><th style="width:11%">Member</th><th style="width:19%">Responsibilities</th><th style="width:44%">Work completed</th><th style="width:26%">Next milestone</th></tr>
-<tr><td><b>Emery Brewer</b> (remote)</td>
+<tr><td><b>Emery Brewer</b> </td>
 <td>System specification (parameter definitions, physics relationships, assumptions); scenario rationale; selector ownership; domain validation.</td>
-<td>Authored <i>CoverageAIDraftParameters.pdf</i> (variables, units, ranges, physics relationships, validation approach) and the earlier simulations in <i>ProjectDeliveryProposal.pdf</i>; these define <code>spec.yaml</code> and the physics the simulator encodes, including speed and boom height as controllable settings (D11, D12). The catalog, scenario library and selector were implemented by AI agents for his ownership and are merged; he reviewed the catalog values, the preset rationale, the selector and the speed and boom-height results.</td>
+<td>Authored <i>CoverageAIDraftParameters.pdf</i> (variables, units, ranges, physics relationships, validation approach) and the earlier simulations in <i>ProjectDeliveryProposal.pdf</i>; these define <code>spec.yaml</code> and the physics the simulator encodes, including speed and boom height as controllable settings (D11, D12). The catalog, scenario library and selector were implemented by AI agents for her ownership and are merged; she reviewed the catalog values, the preset rationale, the selector and the speed and boom-height results.</td>
 <td>Review the closed-loop and extension results and D11&ndash;D16 (M3, Oct 30); spray-angle and pattern-overlap relationships (M4, Nov 20); domain-validation section (M5, Dec 9).</td></tr>
 <tr><td><b>Junjie Ao</b></td>
 <td>Simulator and dataset pipeline; predictive model ownership.</td>
