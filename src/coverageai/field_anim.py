@@ -52,7 +52,9 @@ def field_animation_payload(res, c_req: float) -> dict:
             "wind_speed_ms": _f(x.wind_speed_ms), "wind_rel_deg": _f(rel, 1),
             "wind_screen_deg": _f(rel + (180.0 if direction < 0 else 0.0), 1),
             "temp_c": _f(x.temp_c, 1), "rh_pct": _f(x.rh_pct, 0),
-            "nozzle": f"{u.family} {u.size} at {u.pressure_psi:g} psi",
+            "nozzle": (f"{u.family} {u.size} at {u.pressure_psi:g} psi"
+                       + (f", {u.travel_speed_kmh:g} km/h" if u.travel_speed_kmh is not None else "")
+                       + (f", boom {u.boom_height_m:.2f} m" if u.boom_height_m is not None else "")),
             "droplet": DROPLET_NAMES.get(d.droplet_class, str(d.droplet_class)),
             "rate_gpa": _f(d.app_rate_gpa),
             "vmd_um": _f(d.vmd_um, 0), "crosswind_ms": _f(abs(d.u_cross_ms)),

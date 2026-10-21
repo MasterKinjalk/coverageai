@@ -10,6 +10,12 @@ Outputs (all from gradient-boosted trees on ``features.py`` features):
 ``fit(records)`` follows the loop contract: it receives only NEW records, appends them
 to the stored training data (the initial dataset plus all earlier records) and refits.
 ``fit_frame(df)`` replaces the stored data (initial training from a dataset frame).
+
+Backend (D18): ``backend="lightgbm"`` (default, CPU; the v1 model) or ``backend="xgboost"``
+(optional extra ``gpu``; trains on ``device="cuda"`` with depth-wise trees of ``max_depth``,
+predicts on the CPU with one thread like the LightGBM path). Same features, targets,
+quantile interval and CQR offset. ``n_estimators`` / ``quantile_n_estimators`` may be one
+int or a dict per booster name (``TARGETS`` / ``cov_lo``, ``cov_hi``).
 Baselines for comparison (``RidgeBaseline``, ``ForestBaseline``) share the feature
 builder and point-prediction API but are not used by the loop.
 """
@@ -32,6 +38,31 @@ DEFAULT_PATH = ROOT / "models" / "spray_model_v1.joblib"
 _GPA_UL = float(spec()["physics"]["gpa_to_ul_cm2"])
 _GPA_COL = F.feature_index("gpa")
 _MIN_FIT_ROWS = 20
+BACKENDS = ("lightgbm", "xgboost")
+
+
+def _per_booster(n, name: str) -> int:
+    """Rounds or depth: one int for every booster, or a dict keyed by booster name."""
+    return int(n[name]) if isinstance(n, dict) else int(n)
+
+
+def xgb_train_params(p: dict, n_jobs: int, n_rows: int, name: str, **extra) -> dict:
+    """XGBoost parameters matching the LightGBM settings of ``SprayModel._refit``.
+
+    Depth-wise trees: on the RTX 5070 Ti they train about 3x faster on the GPU than on the
+    CPU, while leaf-wise (loss-guided) trees are no faster on the GPU (1M rows, 200 rounds).
+    min_child_weight = minimum hessian sum = minimum row count for unit weights."""
+    return dict(tree_method="hist", device=p["device"], learning_rate=p["learning_rate"],
+                max_depth=_per_booster(p["max_depth"], name),
+                min_child_weight=min(p["min_child_samples"], max(2, n_rows // 10)),
+                subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, nthread=n_jobs,
+                seed=p["seed"], verbosity=0, **extra)
+
+
+def _xgb_cpu(booster, n_threads: int = 1):
+    """Move a booster to CPU prediction (loop workers run in parallel processes)."""
+    booster.set_param({"device": "cpu", "nthread": n_threads})
+    return booster
 
 
 def _to_internal(Y: np.ndarray, Fm: np.ndarray) -> np.ndarray:
@@ -62,18 +93,23 @@ def records_to_arrays(records: Iterable[tuple[Conditions, Setting, Outcome]]):
 class SprayModel:
     """LightGBM multi-output predictor implementing the Model protocol."""
 
-    def __init__(self, n_estimators: int = 100, learning_rate: float = 0.15,
+    def __init__(self, n_estimators: int | dict = 100, learning_rate: float = 0.15,
                  num_leaves: int = 31, min_child_samples: int = 20,
-                 quantile_n_estimators: int = 60, interval: str = "cqr",
+                 quantile_n_estimators: int | dict = 60, interval: str = "cqr",
                  q_lo: float = 0.1, q_hi: float = 0.9, cal_frac: float = 0.15,
-                 record_weight: float = 1.0, seed: int = 0, n_jobs: int | None = None):
+                 record_weight: float = 1.0, seed: int = 0, n_jobs: int | None = None,
+                 backend: str = "lightgbm", device: str = "cpu", max_depth: int | dict = 8):
         if interval not in ("quantile", "cqr"):
             raise ValueError("interval must be 'quantile' or 'cqr'")
+        if backend not in BACKENDS:
+            raise ValueError(f"backend must be one of {BACKENDS}, got {backend!r}")
         self.params = dict(n_estimators=n_estimators, learning_rate=learning_rate,
                            num_leaves=num_leaves, min_child_samples=min_child_samples,
                            quantile_n_estimators=quantile_n_estimators, interval=interval,
                            q_lo=q_lo, q_hi=q_hi, cal_frac=cal_frac,
-                           record_weight=record_weight, seed=seed, n_jobs=n_jobs)
+                           record_weight=record_weight, seed=seed, n_jobs=n_jobs,
+                           backend=backend, device=device, max_depth=max_depth)
+        self.data_included = True    # False after loading a model saved without its training data
         self._F = np.empty((0, F.N_FEATURES))
         self._Y = np.empty((0, 4))
         self._W = np.empty(0)
@@ -114,13 +150,23 @@ class SprayModel:
         recs = list(records)
         if not recs:
             return
+        if not self.data_included:
+            raise RuntimeError("this SprayModel was saved without its training data, so it cannot "
+                               "be refit; use the residual slow loop (slow_mode='residual')")
         Fm, Y = records_to_arrays(recs)
         self._append(Fm, Y, float(self.params["record_weight"]))
         if self.n_train >= _MIN_FIT_ROWS:
             self._refit()
 
     # ------------------------------------------------------------ training
+    @property
+    def _xgb(self) -> bool:
+        return self.params.get("backend", "lightgbm") == "xgboost"
+
     def _refit(self) -> None:
+        if self._xgb:
+            self._refit_xgb()
+            return
         import time
         t0 = time.perf_counter()
         p = self.params
@@ -139,11 +185,11 @@ class SprayModel:
 
         models: dict[str, lgb.Booster] = {}
         for j, name in enumerate(TARGETS):
-            models[name] = train(Z[:, j], self._W, np.ones(self.n_train, bool), p["n_estimators"],
-                                 objective="regression")
-        models["cov_lo"] = train(Z[:, 0], self._W, fit_mask, p["quantile_n_estimators"],
+            models[name] = train(Z[:, j], self._W, np.ones(self.n_train, bool),
+                                 _per_booster(p["n_estimators"], name), objective="regression")
+        models["cov_lo"] = train(Z[:, 0], self._W, fit_mask, _per_booster(p["quantile_n_estimators"], "cov_lo"),
                                  objective="quantile", alpha=p["q_lo"])
-        models["cov_hi"] = train(Z[:, 0], self._W, fit_mask, p["quantile_n_estimators"],
+        models["cov_hi"] = train(Z[:, 0], self._W, fit_mask, _per_booster(p["quantile_n_estimators"], "cov_hi"),
                                  objective="quantile", alpha=p["q_hi"])
         self.models = models
         self.cqr_offset = 0.0
@@ -151,11 +197,57 @@ class SprayModel:
             Fc, yc = self._F[self._cal], Z[self._cal, 0]
             lo = models["cov_lo"].predict(Fc, num_threads=n_jobs)
             hi = models["cov_hi"].predict(Fc, num_threads=n_jobs)
-            score = np.maximum(lo - yc, yc - hi)
-            n = len(score)
-            level = min(1.0, (p["q_hi"] - p["q_lo"]) * (1 + 1.0 / n))
-            self.cqr_offset = float(np.quantile(score, level))
+            self.cqr_offset = self._cqr_offset(lo, hi, yc)
         self.fit_seconds = time.perf_counter() - t0
+
+    def _cqr_offset(self, lo: np.ndarray, hi: np.ndarray, y: np.ndarray) -> float:
+        p = self.params
+        score = np.maximum(lo - y, y - hi)
+        level = min(1.0, (p["q_hi"] - p["q_lo"]) * (1 + 1.0 / len(score)))
+        return float(np.quantile(score, level))
+
+    def _refit_xgb(self) -> None:
+        """Same boosters, interval and CQR offset as the LightGBM path, trained with XGBoost."""
+        import time
+
+        import xgboost as xgb
+        t0 = time.perf_counter()
+        p = self.params
+        n_jobs = p["n_jobs"] or os.cpu_count() or 1
+        Z = _to_internal(self._Y, self._F)
+        use_cal = p["interval"] == "cqr" and (self._cal.sum() >= 50) and (~self._cal).sum() >= 50
+        fit_mask = ~self._cal if use_cal else np.ones(self.n_train, bool)
+
+        def train(d, name, n_est, **extra):
+            return xgb.train(xgb_train_params(p, n_jobs, self.n_train, name, **extra), d,
+                             num_boost_round=n_est)
+
+        models = {}
+        d_all = xgb.QuantileDMatrix(self._F, label=Z[:, 0], weight=self._W)
+        for j, name in enumerate(TARGETS):
+            d_all.set_label(Z[:, j])
+            models[name] = train(d_all, name, _per_booster(p["n_estimators"], name),
+                                 objective="reg:squarederror")
+        del d_all
+        d_fit = xgb.QuantileDMatrix(self._F[fit_mask], label=Z[fit_mask, 0], weight=self._W[fit_mask])
+        for name, q in (("cov_lo", p["q_lo"]), ("cov_hi", p["q_hi"])):
+            models[name] = train(d_fit, name, _per_booster(p["quantile_n_estimators"], name),
+                                 objective="reg:quantileerror", quantile_alpha=q)
+        del d_fit
+        self.models = {k: _xgb_cpu(b, n_jobs) for k, b in models.items()}
+        self.cqr_offset = 0.0
+        if use_cal:
+            Fc, yc = self._F[self._cal], Z[self._cal, 0]
+            self.cqr_offset = self._cqr_offset(self._predict("cov_lo", Fc), self._predict("cov_hi", Fc), yc)
+        for b in self.models.values():
+            _xgb_cpu(b, 1)
+        self.fit_seconds = time.perf_counter() - t0
+
+    def _predict(self, name: str, Fm: np.ndarray) -> np.ndarray:
+        b = self.models[name]
+        if self._xgb:
+            return np.asarray(b.inplace_predict(Fm), dtype=float)
+        return b.predict(Fm, num_threads=1)
 
     # ------------------------------------------------------------ inference
     def _check(self) -> None:
@@ -166,11 +258,10 @@ class SprayModel:
         """Arrays for a feature matrix: coverage_pct, coverage_lo, coverage_hi, deposition_ul_cm2,
         drift_frac, displacement_mm."""
         self._check()
-        m = self.models
-        Z = np.column_stack([m[t].predict(Fm, num_threads=1) for t in TARGETS])
+        Z = np.column_stack([self._predict(t, Fm) for t in TARGETS])
         P = _from_internal(Z, Fm)
-        lo = m["cov_lo"].predict(Fm, num_threads=1) - self.cqr_offset
-        hi = m["cov_hi"].predict(Fm, num_threads=1) + self.cqr_offset
+        lo = self._predict("cov_lo", Fm) - self.cqr_offset
+        hi = self._predict("cov_hi", Fm) + self.cqr_offset
         cov = P[:, 0]
         lo = np.clip(np.minimum(lo, cov), 0.0, 100.0)
         hi = np.clip(np.maximum(hi, cov), 0.0, 100.0)
@@ -189,13 +280,24 @@ class SprayModel:
         return self.predict_batch([x], [u])[0]
 
     # ------------------------------------------------------------ persistence
-    def save(self, path: str | Path = DEFAULT_PATH) -> Path:
+    def save(self, path: str | Path = DEFAULT_PATH, include_data: bool = True) -> Path:
+        """``include_data=False`` drops the stored training rows (large for big datasets);
+        such a model predicts normally but ``fit(records)`` raises."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        state = dict(params=self.params, F=self._F, Y=self._Y, W=self._W, cal=self._cal,
-                     models={k: v.model_to_string() for k, v in self.models.items()},
+        keep = include_data and self.data_included
+        data = (dict(F=self._F, Y=self._Y, W=self._W, cal=self._cal) if keep else
+                dict(F=np.empty((0, F.N_FEATURES)), Y=np.empty((0, 4)), W=np.empty(0),
+                     cal=np.empty(0, dtype=bool)))
+        if self._xgb:
+            models = {k: bytes(v.save_raw("ubj")) for k, v in self.models.items()}
+        else:
+            models = {k: v.model_to_string() for k, v in self.models.items()}
+        state = dict(params=self.params, **data, models=models,
                      cqr_offset=self.cqr_offset, n_base=self.n_base,
                      feature_version=F.FEATURE_VERSION, feature_names=F.FEATURE_NAMES)
+        if not keep:   # key absent in v1 files (= data included)
+            state["data_included"] = False
         joblib.dump(state, path, compress=3)
         return path
 
@@ -206,8 +308,18 @@ class SprayModel:
             raise ValueError("saved model was built with a different feature set; retrain")
         m = cls(**s["params"])
         m._F, m._Y, m._W, m._cal = s["F"], s["Y"], s["W"], s["cal"]
-        m.models = {k: lgb.Booster(model_str=v) for k, v in s["models"].items()}
+        if m._xgb:
+            import xgboost as xgb
+
+            def _load(raw):
+                b = xgb.Booster()
+                b.load_model(bytearray(raw))
+                return _xgb_cpu(b, 1)
+            m.models = {k: _load(v) for k, v in s["models"].items()}
+        else:
+            m.models = {k: lgb.Booster(model_str=v) for k, v in s["models"].items()}
         m.cqr_offset, m.n_base = s["cqr_offset"], s["n_base"]
+        m.data_included = bool(s.get("data_included", True))
         return m
 
 

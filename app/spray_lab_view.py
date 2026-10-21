@@ -16,8 +16,8 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
+from field_run_view import embed_html
 from coverageai import catalog
 from coverageai import spray_lab as sl
 from coverageai.app_logic import nozzle_pressure_bounds
@@ -112,7 +112,7 @@ def _controls():
 def _animation(res: sl.LabResult) -> None:
     payload = json.dumps(res.particles, separators=(",", ":")).replace("</", "<\\/")
     html = _HTML_PATH.read_text(encoding="utf8").replace("/*__PAYLOAD__*/null", payload, 1)
-    components.html(html, height=575, scrolling=False)
+    embed_html(html, 575)
 
 
 def _kpis(res: sl.LabResult) -> None:

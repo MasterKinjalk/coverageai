@@ -23,7 +23,9 @@ from coverageai.scenarios import random_conditions
 from coverageai.simulator import SpraySimulator
 
 X_COLS = [f.name for f in dataclasses.fields(Conditions)]
-U_COLS = [f.name for f in dataclasses.fields(Setting)]
+# Setting's optional overrides (travel_speed_kmh, boom_height_m; schema 1.1/1.2) share their
+# names with Conditions fields and are None here, so they must not overwrite the x columns.
+U_COLS = [f.name for f in dataclasses.fields(Setting) if f.name not in X_COLS]
 D_COLS = [f.name for f in dataclasses.fields(Derived)]
 Y_COLS = ["coverage_pct", "deposition_ul_cm2", "drift_frac", "displacement_mm", "stains_per_cm2"]
 VERSION = "v1"

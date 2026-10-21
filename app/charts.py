@@ -42,7 +42,8 @@ def coverage_timeseries(df: pd.DataFrame, c_req: float, marginal_min: float, n_t
     names = [L.series(s_) for s_ in ("predicted", "corrected", "measured", "true")]
     colors = alt.Scale(domain=names,
                        range=[C_PRED, C_CORR, C_MEAS, C_TRUE])
-    dash = alt.StrokeDash("series:N", legend=None, scale=alt.Scale(
+    dash = alt.StrokeDash("series:N", title=None, legend=alt.Legend(orient="top", labelColor=TEXT),
+                          scale=alt.Scale(
         domain=names,
         range=[[1, 0], [1, 0], [1, 0], [4, 3]]))
     lines = alt.Chart(long).mark_line(point=alt.OverlayMarkDef(size=28), strokeWidth=2).encode(
@@ -142,16 +143,23 @@ def pattern_chart(pat: dict, height: int = 220):
     return _style(ch, height)
 
 
-def policy_bars(df: pd.DataFrame, col: str, title: str, color: str = C_PRED, height: int = 220):
+def policy_bars(df: pd.DataFrame, col: str, title: str, color: str = C_PRED, height: int | None = None,
+                show_labels: bool = True):
+    """Horizontal bars, one per strategy, so every long strategy name stays readable.
+    ``show_labels=False`` hides the names (use it for the 2nd and 3rd chart in a row; the bar
+    order is the same and the tooltip still names the strategy)."""
+    order = list(df["policy"])
+    height = height or 46 + 34 * len(order)
+    vmax = float(np.nanmax(df[col].to_numpy())) if len(df) else 0.0
+    dom = [0, vmax * 1.22 if vmax > 0 else 1.0]
+    ylab = alt.Axis(labelLimit=230, title=None) if show_labels else alt.Axis(labels=False, title=None, ticks=False)
     ch = alt.Chart(df).mark_bar(color=color, cornerRadiusEnd=4).encode(
-        x=alt.X("policy:N", title=None, sort=list(df["policy"]),
-                axis=alt.Axis(labelAngle=-20, labelLimit=140)),
-        y=alt.Y(f"{col}:Q", title=title),
+        y=alt.Y("policy:N", title=None, sort=order, axis=ylab),
+        x=alt.X(f"{col}:Q", title=title, scale=alt.Scale(domain=dom, nice=False)),
         tooltip=[alt.Tooltip("policy:N", title="Control strategy"),
                  alt.Tooltip(f"{col}:Q", title=title, format=".3f")])
-    txt = alt.Chart(df).mark_text(dy=-8, color=TEXT).encode(
-        x=alt.X("policy:N", sort=list(df["policy"])), y=f"{col}:Q",
-        text=alt.Text(f"{col}:Q", format=".2f"))
+    txt = alt.Chart(df).mark_text(align="left", dx=4, color=TEXT).encode(
+        y=alt.Y("policy:N", sort=order), x=f"{col}:Q", text=alt.Text(f"{col}:Q", format=".2f"))
     return _style(ch + txt, height)
 
 

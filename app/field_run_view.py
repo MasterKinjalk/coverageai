@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+import streamlit as st
 import streamlit.components.v1 as components
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
@@ -123,7 +124,7 @@ function frame(p,title,legend,ylabel,r,col){
   text(fmt(v,r.step),p.x-5,y+3.5,{al:'right',sz:10.5,c:col||MUT})});
  ctx.strokeStyle='#3a4454';ctx.strokeRect(p.x+.5,p.y+.5,p.w-1,p.h-1);
  const step=Math.max(1,Math.ceil(N/10/(p.w>500?1:1.6)));
- for(let k=1;k<=N;k++){if(k===1||k%step===0||k===N){const x=Math.round(p.X(k))+.5;ctx.beginPath();ctx.moveTo(x,p.y+p.h);ctx.lineTo(x,p.y+p.h+3);ctx.strokeStyle='#5b6575';ctx.stroke();
+ for(let k=1;k<=N;k++){if(k===1||k===N||(k%step===0&&N-k>=step*0.6)){const x=Math.round(p.X(k))+.5;ctx.beginPath();ctx.moveTo(x,p.y+p.h);ctx.lineTo(x,p.y+p.h+3);ctx.strokeStyle='#5b6575';ctx.stroke();
   text(String(k),x,p.y+p.h+13,{al:'center',sz:10.5,c:MUT})}}
  if(p.last)text('Field section (driving order)',p.x+p.w/2,p.y+p.h+31,{al:'center',sz:11.5,c:TXT});
  text(title,p.box.x+2,p.box.y+13,{sz:12.5,w:600,c:CT});
@@ -253,13 +254,15 @@ function readout(){
  $('pos').textContent='Section '+(cur()+1)+' / '+N;
  if(!scrubbing)$('scrub').value=Math.round(Math.min(t,N)/N*1000);
 }
-let sumShown=false;
+let sumShown=false,sumClosed=false;
 function summary(){
- const show=t>=N;if(show===sumShown)return;sumShown=show;const el=$('sum');el.style.display=show?'flex':'none';if(!show)return;
+ if(t<N)sumClosed=false;
+ const show=t>=N&&!sumClosed;if(show===sumShown)return;sumShown=show;const el=$('sum');el.style.display=show?'flex':'none';if(!show)return;
  const a=S.map(s=>s.actual),m=a.reduce((x,y)=>x+y,0)/N,sd=N>1?Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/(N-1)):0;
  const on=S.filter(s=>s.on_target).length,dr=S.reduce((x,s)=>x+s.drift_pct,0)/N,rs=S.filter(s=>s.respray).length;
- el.innerHTML='<div><h2>Pass complete</h2><table><tr><td>Sections on target</td><td>'+on+' / '+N+'</td></tr><tr><td>Coverage, mean &plusmn; sd</td><td>'+m.toFixed(1)+' &plusmn; '+sd.toFixed(1)+' %</td></tr><tr><td>Mean drift</td><td>'+dr.toFixed(1)+' %</td></tr><tr><td>Sections to re-spray</td><td>'+rs+'</td></tr></table><button id="rp" class="on">Replay</button></div>';
- $('rp').onclick=()=>{t=0;playing=true;sync()}}
+ el.innerHTML='<div><h2>Pass complete</h2><table><tr><td>Sections on target</td><td>'+on+' / '+N+'</td></tr><tr><td>Coverage, mean &plusmn; sd</td><td>'+m.toFixed(1)+' &plusmn; '+sd.toFixed(1)+' %</td></tr><tr><td>Mean drift</td><td>'+dr.toFixed(1)+' %</td></tr><tr><td>Sections to re-spray</td><td>'+rs+'</td></tr></table><button id="rp" class="on">Replay</button> <button id="rv">Review run</button></div>';
+ $('rp').onclick=()=>{t=0;playing=true;sync()};
+ $('rv').onclick=()=>{sumClosed=true}}
 
 function frameLoop(ts){
  if(last===null)last=ts;const dt=Math.min(1,(ts-last)/1000);last=ts;
@@ -285,8 +288,18 @@ requestAnimationFrame(frameLoop);
 </script></body></html>"""
 
 
+def embed_html(html: str, height: int) -> None:
+    """Show a self-contained HTML page in an iframe. ``components.html`` is deprecated (Streamlit
+    announced its removal after 2026-06-01), so use ``st.iframe`` when this Streamlit has it and
+    fall back to ``components.html`` for older versions (pyproject allows streamlit>=1.38)."""
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=int(height))
+    else:
+        components.html(html, height=int(height), scrolling=False)
+
+
 def render_field_animation(res, c_req: float, height: int = 900) -> None:
     """Render the animated field run (runs entirely in the browser, no Streamlit reruns)."""
     payload = field_animation_payload(res, c_req)
     data = json.dumps(payload).replace("</", "<\\/")
-    components.html(_HTML.replace("__PAYLOAD__", data), height=int(height), scrolling=False)
+    embed_html(_HTML.replace("__PAYLOAD__", data), height)

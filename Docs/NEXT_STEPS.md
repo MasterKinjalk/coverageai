@@ -1,94 +1,49 @@
-# Next steps (handoff, 2026-10-19)
+# Status and handoff (2026-10-19)
 
-Written for the next Claude Code session (or a teammate) picking this up on a new machine.
-Read `README.md` for setup, then this file, then the proposal's success criteria
-(`Docs/CoverageVisionAI_Project_Proposal (1).pdf`, Table 1) and `Docs/decisions.md`.
+For the next Claude Code session or teammate. Read `README.md` for setup, then this file, then the
+final scorecard `results/scorecard.md` (every proposal criterion and extension with its number,
+95% CI and source file) and `Docs/decisions.md` (D1-D17).
 
-The last laptop session ran four background agents. Their code is all in this commit and the
-test suite passes (apart from the known Windows parquet failures), but two of the long
-experiment runs were cut off when the session ended, and the final integration check never
-happened. Work through the items below in order.
+All planned work streams are finished and the final report is built (`reports/final/`), with no
+pending inputs left. The only open criterion is the real-card one, blocked by data access.
 
-## Status of each work stream
+## Finished in this session
 
-| Stream | Code | Results | What is left |
-|---|---|---|---|
-| Fair oracle + redesigned slow loop (`loop.FairOracleModel`, `feedback.ResidualCorrectedModel`) | done | `results/closed_loop_summary.md`: fast+slow recovers 96% [80, 107] of the gap at +4.1% volume vs the fair oracle, criterion met | nothing |
-| Travel speed as an optional setting (D11, schema 1.1) | done | `results/speed_control_eval.md`: drift and volume dip, success flat | nothing |
-| U-Net B1, full GPU training | done, weights in `models/unet_v1.pt` | `results/verification_summary.md`, `results/b1_synthetic.json` | re-time per-card speed on an idle machine (target <= 2 s on a laptop CPU; measured 1.09 s while the CPU was busy) |
-| Boom height as an optional setting (D12, schema 1.2) | done (`tests/test_boom_control.py`) | `results/boom_control_eval.md` complete | agent was stopped before its final report; review the D12 row in `Docs/decisions.md`, re-run `uv run pytest tests/test_boom_control.py tests/test_speed_control.py`, write the verdict (see 3) |
-| Wind forecaster (`src/coverageai/forecast.py`, `tests/test_forecast.py`) | done, 22 tests pass | only the pilot: `results/forecast_eval_pilot.md` (3 seeds, 2 presets) | **full 20-seed grid never finished** (see 1) |
-| Physics-first hybrid (`src/coverageai/model/hybrid.py`, `tests/test_hybrid.py`) | done | `results/hybrid_eval.md`: offline + selector stages complete, closed loop is a 1-seed PILOT | **full closed-loop stage never finished** (see 2) |
-| App catch-up (new strategies `fast_slow`, `oracle_card`, noisy reader back) | done, 56 app tests pass | - | never checked in a browser (see 4) |
+* Wind forecaster: full 20-seed grid (320 cells) run; negative result, default off (`results/forecast_eval.md`, headline in `results/forecast_eval_headline.md`, figure `experiments/figures/forecast_eval.png`, decision D13). Three committed syntax errors in `experiments/eval_forecast.py` fixed.
+* Hybrid predictor: full 20-seed closed-loop stage run; not better than `SprayModel`, default stays `spray` (`results/hybrid_eval.md`, verdict from `results/hybrid_eval_notes.md`, D14).
+* Boom height: verdict written at the top of `results/boom_control_eval.md` (notes in `results/boom_control_eval_notes.md`) and appended to D12; default off.
+* Travel speed: scorecard status "inconclusive, not adopted". The paired 200-scenario `speed` variant of `results/boom_control_eval.md` (4 km/h grid) shows success unchanged and a small drift cut, but with the 2 km/h grid that D11 ships the open-loop learned-model success falls 0.935 to 0.900 (`results/speed_control_eval.md`, no CI), and the only closed loop is a 3-seed pilot.
+* Decisions: D15 (fair oracle, `loop.FairOracleModel`), D17 (app opt-in controller options) and D16 (residual-offset slow loop, `feedback.ResidualCorrectedModel`) added; D14's offline figure corrected to 94-99 %.
+* Final scorecard and report: `results/scorecard.md`, `reports/final/build.py` + `template.html` -> `final_report.html` / `.pdf`. Every number is read from a results file at build time.
+* README: experiments table, layout, known issues updated.
+* Test suite on the new machine: 406 tests pass, 1 skipped (Zenodo data not downloaded; run on commit c050f75 after the review fixes), including the three parquet tests that failed on the old laptop.
+* App browser check (headless Chrome over CDP): all six strategies and the perfect / classic / noisy readers run, animation controls and end-of-run summary work, card replay consistent; five display bugs fixed; new opt-in sidebar expander "Advanced controller options" (travel speed, boom height, wind forecast), default off and bit-identical when off (D17). App tests: 65 pass.
+* Reader timing re-measured with the same protocol on the desktop CPU (`results/b1_idle_retime.json`): B1 p95 0.52 s, B0 p95 0.15 s. The <= 2 s laptop criterion is met by the earlier busy-laptop measurement (B1 p95 1.09 s, an upper bound for that laptop); the desktop number is not a laptop number.
+* Final report filled with both inputs (`APP_CHECK`, `B1_IDLE_RETIME` in `reports/final/build.py`); no PENDING boxes remain.
 
-## 1. Finish the wind-forecaster evaluation
+## Still open
 
-```bash
-uv run python experiments/eval_forecast.py --workers 16
-```
+1. **Real annotated cards (blocked).** Zenodo record 14010262 (2 annotated real cards, 2,754 droplets, plus pre-annotated real squares) is restricted. Someone on the team must request access through the Zenodo page and/or send `reports/email_draft_simoes.md`. When the files arrive, put them under `data/external/simoes2025/real/image/*.png` and `real/label/*.txt` and run `uv run --no-sync python experiments/eval_verifiers.py --merge`; then rebuild the report. Until then the "<= 5 pp on real cards" criterion is blocked.
+2. **Team checks before submission.** The report keeps `TEAM TO CONFIRM` marks: contributions of Emery and Junjie, whether the Zenodo request was sent, references [9]-[11] and [15]-[17]. `Docs/ai_usage_log.md` must have a line for every session (the post-midterm sessions are logged by the orchestrator).
+3. **Known misses that stay misses** (do not tune them away): out-of-generator class agreement on the Simões synthetic cards (B0 86.3 %, B1 88.3 % vs 90 %); volume against the card-aware oracle (unreachable by construction); residual variance does not fall across passes.
+4. Optional, not required by the proposal: a paired 20-seed closed-loop run of travel-speed control on the shipped 2 km/h grid (would settle the inconclusive D11 verdict); expose the hybrid model in the app (speed, boom height and forecaster are exposed since D17); rerun the rendered-card verifier ablation (`closed_loop.py`, B0/B1 verifiers) with 20 seeds instead of 5 now that the machine is fast. A full 40-card app pass with the U-Net reader takes about 30 s on the idle desktop; under heavy CPU load from parallel experiments it may not finish for minutes.
+5. **SprayModel v2 (D18), team decision.** A GPU-trained XGBoost predictor (1M extra simulator rows) cuts the coverage error against the noise-free coverage from 0.64 to 0.24 pp and drift/displacement errors by about 80 %. In the closed loop `spray_model_v2_fast` meets C_req in +0.4 to +0.7 pp more segments than v1 (CIs exclude 0), with volume unchanged and drift +2-3 % relative. The default stays v1; the report and scorecard are built on v1 and were not regenerated. Decide whether to adopt v2_fast (then rerun `closed_loop.py` and rebuild the report). Install xgboost with `uv pip install xgboost==3.4.1` (keeps the CUDA torch; `uv sync --extra vision --extra gpu` also works but restores the CPU torch); files are gitignored, regenerate with `uv run --no-sync python experiments/train_spray_v2.py --cost-cap 1800 --tag fast --skip-small`. Results: `results/model_v2_fast.md`, `results/model_v2_closed_loop/compare_v2_fast.md`. README is not yet updated for the `gpu` extra.
 
-* Grid: mismatch {none, low, med, high} x presets {gusty_afternoon, crosswind_shift, marginal_limits, calm_morning} x 20 seeds, arms off / last / ewma / ar1 / ar1+gust / nominal+gust / gust_oracle, fast and fast+slow. 320 cells; it was at 180/320 after ~55 min with 4 workers on the laptop.
-* Writes `results/forecast_eval.json` and `.md`. Then add the hand-written verdict with `--combine --headline "..."`.
-* Pilot signal (`results/forecast_eval_pilot.md`): the forecasters cut wind-forecast error (AR(1) by ~0.18 m/s) but do not raise the share of sections meeting the target; even the `gust_oracle` upper bound barely helps. Expect a negative or "no significant benefit" result; report it as such, with the gust-oracle bound as the explanation (the selector's margin already absorbs most gust risk).
-* Add a decisions row (D13) for the forecaster design: anemometer observes the realized wind of completed sections with sd 0.3 m/s noise, never the upcoming one; forecaster off = bit-identical to before.
-
-## 2. Finish the hybrid closed-loop stage
+## Rebuilding the final report
 
 ```bash
-uv run python experiments/eval_hybrid.py --stage closed --workers 16 --seeds 20
-uv run python experiments/eval_hybrid.py --stage report
+uv run --no-sync python reports/final/build.py            # HTML + PDF + results/scorecard.md
+uv run --no-sync python reports/final/build.py --no-pdf   # HTML + scorecard only
 ```
 
-* It was at 660/960 cells after ~40 min with 4 workers. The stage replaces the `## Closed loop (PILOT)` section of `results/hybrid_eval.md`.
-* Key framing (keep it in the report): the exact physics base is the plant's own equations, so `physics` and `hybrid` rows are an upper bound (circular). The informative rows are the misspecified bases: offline, the learned residual removes 96 to 99% of the misspecification error; in the selector test, misspecified physics alone meets the target in 44% of scenarios vs 93.5% for the hybrid on the same wrong base.
-* If the closed loop confirms the pilot, the recommendation is: hybrid with a misspecified base performs like the pure-ML SprayModel, and much better than physics alone when the physics is wrong.
-
-## 3. Write the boom-height verdict
-
-From `results/boom_control_eval.md` (deterministic paired scoring, 200 scenarios + 10-seed closed loop):
-
-* Height control alone (open loop) *raises* drift slightly (+0.003) because the selector trades height for lower volume; success unchanged.
-* Speed + height together lower drift (-0.003) and volume (about -2.6 GPA) but cost 2 to 3 pp of sections meeting the target in the closed loop.
-* With the fair oracle, height control cuts drift clearly (-0.004 to -0.006) without losing success, so the limit is the learned/nominal model's prediction of the height effect, not the physics.
-* Default stays off. Add these findings to `Docs/decisions.md` D12 and to the summary table in 5.
-
-## 4. Check the app in a browser
-
-```bash
-uv run streamlit run app/main.py
-```
-
-* Field run tab: run each control strategy (open, fast, fast_slow, oracle, oracle_card, best_fixed) and each card reader (classic, U-Net, noisy). Press Play in the animated figures, test the scrubber, hover and click-to-seek, the end-of-run summary.
-* `fast_slow` should show the "Learning between passes" table, and the card replay should be consistent (`card.consistent` true).
-* Compare strategies tab: default selection open / fast / fast_slow / oracle, caption explaining fair vs card-aware oracle.
-* "How the simulator works" tab (Spray lab): figures render.
-* Label to check: the oracle is now the *fair* oracle ("Knows hidden conditions (fair upper bound)"); `oracle_card` is the unreachable one.
-* Not yet exposed in the app: forecaster, boom-height and speed options, hybrid model. Add them to the sidebar only if time allows (all are opt-in in `config/spec.yaml` / loop arguments).
-* First load takes 30 to 40 s (40 rendered cards per run).
-
-## 5. Final scorecard and report
-
-Build one table of every proposal success criterion plus the extensions, each marked met / missed with its number and CI. Current state:
-
-| Target | Result | Status |
-|---|---|---|
-| Closed loop: >= 50% gap recovery, <= +10% volume vs oracle | fast+slow 96% [80, 107], +4.1% [+2.8, +5.5] vs fair oracle | met |
-| Same vs card-aware oracle | 63% recovery, +17% volume | missed by design: that oracle uses 12.6% less volume than any real controller could |
-| Card reading, own cards | B0 1.44 pp, B1 0.20 pp MAE | met |
-| Card reading, Simões cards | B0 2.65 pp / 86% class agreement, B1 1.74 pp / 88% | MAE met by B1; class agreement (>= 90%) missed by both, underread at 30 to 50% coverage (only 16 such cards) |
-| Card reading speed | B0 0.26 s, B1 1.09 s per card | met, re-time on an idle CPU |
-| Real annotated cards | evaluation code ready | blocked: Zenodo record is restricted, someone must request access (`reports/email_draft_simoes.md`) |
-| Speed as a setting | small drift/volume gain, no success gain | done, off by default |
-| Boom height as a setting | see 3 | done, off by default |
-| Wind forecaster | see 1 | pending full run |
-| Hybrid predictor | see 2 | pending closed-loop run |
-
-Negative results to keep in the report: prediction error variance does not shrink pass after pass (per-card noise and gusts are irreducible), and B1 is less safe outside the generator than on our own cards.
-
-Then update the report (`reports/midterm/build.py` is the template for the final one) and commit.
+* The PDF is printed by headless Edge (`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`); on another OS change `EDGE` in `build.py` or use `--no-pdf` and print the HTML.
+* Figures are copied (and some cropped) from `experiments/figures/` into `reports/final/figures/` at build time.
+* `results/scorecard.md` is generated; edit `build.py` (`scorecard()`, `negative_results()`), not the md.
+* `reports/midterm/` is the frozen midterm pipeline; do not rebuild it against the new results (its prose quotes midterm numbers).
 
 ## Notes for running on the new machine
 
-* Raise `--workers` (the laptop used 4 to 7). LightGBM threads per worker: `--n-jobs`.
-* Keep `uv run --no-sync` if you installed CUDA torch (see README).
-* Commit the regenerated `results/*.json/.md` and figures; data and old checkpoints stay ignored.
+* 32 logical cores, RTX 5070 Ti, CUDA torch 2.11+cu128. Always `uv run --no-sync ...` (or `export UV_NO_SYNC=1`); a plain `uv run` re-syncs to the lock file and puts the CPU torch back.
+* Raise `--workers` for the experiment grids (the laptop used 4 to 7); LightGBM threads per worker: `--n-jobs`.
+* Timing tests and reader runtimes are sensitive to CPU load; measure on an idle machine (protocol in `results/b1_idle_retime.json`).
+* Commit the regenerated `results/*.json/.md`, figures and `reports/final/` outputs; data and old checkpoints stay ignored.

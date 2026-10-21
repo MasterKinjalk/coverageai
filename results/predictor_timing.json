@@ -1,0 +1,20 @@
+{
+  "spray_model_v1.joblib": {
+    "n_candidates": 547,
+    "median_ms": 5.787050031358376,
+    "p95_ms": 8.840925004915334,
+    "reps": 300
+  },
+  "spray_model_v2.joblib": {
+    "n_candidates": 547,
+    "median_ms": 134.7539500275161,
+    "p95_ms": 171.47820499667432,
+    "reps": 300
+  },
+  "spray_model_v2_fast.joblib": {
+    "n_candidates": 547,
+    "median_ms": 15.874950040597469,
+    "p95_ms": 23.631094972370196,
+    "reps": 300
+  }
+}

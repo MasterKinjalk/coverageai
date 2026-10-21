@@ -30,7 +30,7 @@ from coverageai import scenarios
 from coverageai.config import px_per_mm, spec
 from coverageai.contracts import (Conditions, Derived, Outcome, Prediction, Setting,
                                   coverage_class)
-from coverageai.loop import (Modules, POLICIES, default_mock_modules, run_pass,
+from coverageai.loop import (FORECAST_POLICIES, Modules, POLICIES, default_mock_modules, run_pass,
                              run_passes_slow, segment_rng, summarize)
 
 MISMATCH_LEVELS = ("none", "low", "med", "high")
@@ -38,6 +38,13 @@ APP_POLICIES = ("open", "fast", "fast_slow", "oracle", "oracle_card", "best_fixe
 N_LEARN_PASSES = 3          # earlier "learning" passes before the displayed fast_slow pass
 MODEL_CHOICES = ("oracle_nominal", "spray", "mock")
 VERIFIER_CHOICES = ("perfect", "noisy", "b0", "b1")
+# Opt-in controller options (all off by default; see config/spec.yaml selector.*_options and
+# coverageai.forecast). The grids are the ones the evaluation scripts use
+# (experiments/eval_speed_control.py, experiments/eval_boom_control.py); the selector further
+# restricts them to +-band around the field conditions and to the legal ranges.
+SPEED_OPTIONS_KMH = tuple(float(v) for v in range(8, 31, 2))
+BOOM_HEIGHT_OPTIONS_M = (0.30, 0.40, 0.50, 0.60, 0.75)
+FORECAST_CHOICES = ("off", "last", "ewma", "ar1", "ar1+gust")
 CLASS_ORDER = ("acceptable", "marginal", "critical")
 CLASS_COLORS = {"acceptable": "#3ddc97", "marginal": "#f5b942", "critical": "#ef5b5b",
                 "pending": "#2b3340"}
@@ -180,7 +187,9 @@ def best_fixed_for(modules: Modules, conds: Sequence[Conditions], c_req: float) 
 def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str, seed: int,
                      mismatch: str, c_req: float, lam: float | None = None,
                      fixed_setting: Setting | None = None, render: bool | None = None,
-                     pass_id: str | None = None, n_learn: int = N_LEARN_PASSES) -> PassResult:
+                     pass_id: str | None = None, n_learn: int = N_LEARN_PASSES,
+                     speed_control: bool = False, boom_control: bool = False,
+                     forecaster: str | None = None) -> PassResult:
     """Run one pass and keep what the UI needs (selector records, timing).
 
     ``fast_slow``: runs ``n_learn`` earlier passes (seeds ``seed + 1009 i``, no card
@@ -192,6 +201,14 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     Starts a simulator pass (persistent canopy/wear + AR(1) gusts) when the simulator
     supports it, applies ``lam`` to the selector for the duration of the call, and
     computes the best-fixed setting if the policy needs one and none was given.
+
+    Opt-in options, all off by default (then nothing below changes the run): ``speed_control`` /
+    ``boom_control`` let the selector also choose travel speed / boom height from
+    ``SPEED_OPTIONS_KMH`` / ``BOOM_HEIGHT_OPTIONS_M`` (set on the selector for the duration of the
+    call, like ``lam``; best_fixed keeps its single nozzle setting). ``forecaster`` (one of
+    ``FORECAST_CHOICES``; "off"/None = none) turns on the short-horizon wind forecaster for the
+    policies that support it (open, fast, fast_slow; ignored by the others). For fast_slow one
+    forecaster object is shared by the learning passes and the displayed pass.
     """
     if policy not in POLICIES:
         raise ValueError(f"unknown policy {policy!r}")
@@ -200,28 +217,50 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     mods = dataclasses.replace(modules, selector=rec)
     if render is None:
         render = mods.verifier is not None
-    vision = bool(render and mods.verifier is not None and mods.renderer is not None)
+    # An image-free verifier (NoisyVerifier.measure_outcome) never reads rendered cards in the
+    # loop (loop.run_pass: ``direct``), so it must not be reported as image analysis.
+    vision = bool(render and mods.verifier is not None and mods.renderer is not None
+                  and not hasattr(mods.verifier, "measure_outcome"))
     if policy == "best_fixed" and fixed_setting is None:
         fixed_setting = best_fixed_for(mods, conds, c_req)
+    # Validate everything that can raise BEFORE touching the (st.cache_resource-shared) selector;
+    # then mutate inside the try so the finally always restores, even on a partial failure.
+    fc = _make_forecaster(forecaster) if policy in FORECAST_POLICIES else None
     old_lam = getattr(sel, "lam", None)
-    if lam is not None and old_lam is not None:
-        sel.lam = float(lam)
+    inner = sel.inner if isinstance(sel, RecordingSelector) else sel
+    opt_grids: list[tuple[str, Any]] = []
+    for on, attr, grid, what in ((speed_control, "speed_options_kmh", SPEED_OPTIONS_KMH, "travel-speed"),
+                                 (boom_control, "boom_height_options_m", BOOM_HEIGHT_OPTIONS_M, "boom-height")):
+        if on:
+            if not hasattr(inner, attr):
+                raise ValueError(f"this selector does not support {what} control")
+            opt_grids.append((attr, grid))
+    saved_opts: dict[str, Any] = {}
+    lam_set = False
     t0 = time.perf_counter()
     meta: dict = {}
     run_seed = int(seed)
     try:
+        if lam is not None and old_lam is not None:
+            sel.lam = float(lam)
+            lam_set = True
+        for attr, grid in opt_grids:
+            saved_opts[attr] = getattr(inner, attr)
+            setattr(inner, attr, list(grid))
         if policy == "fast_slow":
             run_seed, passes = _learn_between_passes(mods, conds, int(seed), mismatch,
-                                                     float(c_req), int(n_learn))
+                                                     float(c_req), int(n_learn), forecaster=fc)
             meta["passes"] = passes
         if hasattr(mods.simulator, "begin_pass"):
             mods.simulator.begin_pass(run_seed, mismatch)
         logs = run_pass(list(conds), policy, mods, run_seed, mismatch, float(c_req),
                         pass_id or f"{policy}_s{run_seed}", render=vision,
-                        fixed_setting=fixed_setting)
+                        fixed_setting=fixed_setting, forecaster=fc)
     finally:
-        if lam is not None and old_lam is not None:
+        if lam_set:
             sel.lam = old_lam
+        for attr, old in saved_opts.items():
+            setattr(inner, attr, old)
     if policy == "fast_slow":
         meta["passes"].append(_pass_summary(len(meta["passes"]) + 1, logs, float(c_req),
                                             mods.model, displayed=True))
@@ -229,6 +268,16 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                       mismatch=mismatch, c_req=float(c_req), lam=lam, modules=mods,
                       records=rec.records, fixed_setting=fixed_setting, used_vision=vision,
                       elapsed_s=time.perf_counter() - t0, meta=meta)
+
+
+def _make_forecaster(name: str | None):
+    """None/"off" -> None; otherwise a fresh WindForecaster (names: FORECAST_CHOICES)."""
+    if name in (None, "off"):
+        return None
+    if name not in FORECAST_CHOICES:
+        raise ValueError(f"unknown forecaster {name!r}; choose from {FORECAST_CHOICES}")
+    from coverageai.forecast import make_forecaster
+    return make_forecaster(name)
 
 
 def _pass_summary(i: int, logs: Sequence, c_req: float, model, displayed: bool = False) -> dict:
@@ -240,8 +289,24 @@ def _pass_summary(i: int, logs: Sequence, c_req: float, model, displayed: bool =
             "displayed": displayed}
 
 
+def _verified_records(logs: Sequence) -> list[tuple[Conditions, Setting, Outcome]]:
+    """Slow-loop training records for ``logs``, built exactly like ``loop.run_passes_slow``:
+    measured coverage (and measured stains if available), other outcome fields from the
+    simulator, and the point-forecast wind (``extra["fc_wind_ms"]``) as the conditions when a
+    forecaster was on, else the nominal ``lg.x``."""
+    recs = []
+    for lg in logs:
+        o = lg.outcome
+        stains = lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None else o.stains_per_cm2
+        x_rec = (lg.x if "fc_wind_ms" not in lg.extra
+                 else dataclasses.replace(lg.x, wind_speed_ms=lg.extra["fc_wind_ms"]))
+        recs.append((x_rec, lg.u, Outcome(lg.meas.coverage_pct, o.deposition_ul_cm2,
+                                          o.drift_frac, o.displacement_mm, stains, None)))
+    return recs
+
+
 def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int, mismatch: str,
-                          c_req: float, n_learn: int) -> tuple[int, list[dict]]:
+                          c_req: float, n_learn: int, forecaster=None) -> tuple[int, list[dict]]:
     """Slow loop: ``n_learn`` passes (no rendering) through ``run_passes_slow``, then one
     more fit on the last pass so ``mods.model`` is the ResidualCorrectedModel as it stands
     at the displayed pass. Returns (seed of the displayed pass, summaries of the earlier
@@ -251,7 +316,7 @@ def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int,
     passes: list[dict] = []
     if n_learn > 0:
         logs = run_passes_slow(list(conds), mods, seed, mismatch, c_req, n_passes=n_learn,
-                               render=False, correction=corr)
+                               render=False, correction=corr, forecaster=forecaster)
         by_pass: dict[int, list] = {}
         for lg in logs:
             by_pass.setdefault(int(lg.extra["slow_pass"]), []).append(lg)
@@ -260,10 +325,7 @@ def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int,
             passes[-1]["slow_offset_pp"] = float(by_pass[i][0].extra.get("slow_global_corr", 0.0))
         # run_passes_slow does not refit after its last pass: do it here
         last = by_pass[max(by_pass)]
-        corr.fit([(lg.x, lg.u, Outcome(lg.meas.coverage_pct, lg.outcome.deposition_ul_cm2,
-                                       lg.outcome.drift_frac, lg.outcome.displacement_mm,
-                                       lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None
-                                       else lg.outcome.stains_per_cm2, None)) for lg in last])
+        corr.fit(_verified_records(last))
     mods.model = corr
     return seed + 1009 * n_learn, passes
 
@@ -373,7 +435,9 @@ def top_candidates_frame(info: dict | None) -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
     rows = []
     for c in info["top"]:
-        rows.append({"Setting": f"{c['family']}-{c['size']} @ {c['pressure_psi']:g} psi",
+        extra = "".join([f", {c['travel_speed_kmh']:g} km/h" if c.get("travel_speed_kmh") is not None else "",
+                         f", boom {c['boom_height_m']:.2f} m" if c.get("boom_height_m") is not None else ""])
+        rows.append({"Setting": f"{c['family']}-{c['size']} @ {c['pressure_psi']:g} psi{extra}",
                      "Pred %": round(c["pred_cov"], 1),
                      "Corr. %": round(c["corrected_cov"], 1),
                      "Drift": round(c["drift"], 4), "GPA": round(c["gpa"], 2),
@@ -525,14 +589,16 @@ def compare_policies(modules: Modules, conds: Sequence[Conditions], seed: int, m
                      c_req: float, lam: float | None = None,
                      policies: Sequence[str] = ("open", "fast", "fast_slow", "oracle"),
                      render: bool = False, fixed_setting: Setting | None = None,
-                     n_learn: int = N_LEARN_PASSES
+                     n_learn: int = N_LEARN_PASSES, speed_control: bool = False,
+                     boom_control: bool = False, forecaster: str | None = None
                      ) -> dict[str, PassResult]:
     """Run each policy on the same conditions, seed and hidden mismatch realization."""
     out = {}
     for p in policies:
         out[p] = run_pass_wrapper(modules, conds, p, seed, mismatch, c_req, lam,
                                   fixed_setting=fixed_setting if p == "best_fixed" else None,
-                                  render=render, n_learn=n_learn)
+                                  render=render, n_learn=n_learn, speed_control=speed_control,
+                                  boom_control=boom_control, forecaster=forecaster)
     return out
 
 

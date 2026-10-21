@@ -2,6 +2,18 @@
 
 N=200 random no-mismatch scenarios, C_req=30%. Heights [0.3, 0.4, 0.5, 0.6, 0.75] m and speeds [8.0, 12.0, 16.0, 20.0, 24.0, 28.0] km/h, each within +-25% of the scenario value, spec ranges, and (heights) above the family minimum overlap height H >= 1.3 * spacing / (2 tan(angle/2)): TP65 0.52 m, ULD 0.19 m, 3D 0.28 m, XR 0.23 m, DGX40 0.91 m. Scoring is paired: each variant's choice for scenario i is simulated with rng [seed, i]; CIs are paired bootstrap over scenarios of the per-scenario difference vs 'off'.
 
+## Verdict
+
+Default stays off. Height control does not pay off with the nominal or learned selector model; it pays off only with the fair oracle, and only for drift.
+
+- Open loop, height alone: drift rises, success unchanged. Nominal model: +0.0033 [+0.0010, +0.0057] drift, +0.0000 [-0.0200, +0.0200] success. Learned model: +0.0027 [+0.0005, +0.0049] drift, +0.0100 [-0.0150, +0.0350] success. The selector uses the height options to cut volume (24.83 to 21.42 GPA, nominal), not drift. In this no-mismatch test the nominal model is the simulator's own expected physics, so this is the selector's lambda trade-off between drift and volume choosing lower volume, not a misprediction.
+- Open loop, speed+height: drift falls; success falls with the nominal model (CI excludes 0) and is unclear with the learned model. Nominal: -0.0029 [-0.0049, -0.0011] drift, -0.0200 [-0.0400, -0.0050] success. Learned: -0.0029 [-0.0042, -0.0015] drift, -0.0050 [-0.0250, +0.0150] success.
+- Closed loop, fast loop, speed+height: lower volume, fewer sections meeting the target, lower drift only at high mismatch. Fraction met -0.0287 [-0.0362, -0.0206] (med) and -0.0344 [-0.0444, -0.0244] (high); GPA -2.5927 [-3.0943, -2.1093] and -2.8117 [-3.3392, -2.3181]; drift -0.0021 [-0.0045, +0.0003] (med, CI includes 0) and -0.0035 [-0.0066, -0.0005] (high). Height alone also loses target: -0.0162 [-0.0244, -0.0087] (med), -0.0162 [-0.0262, -0.0062] (high).
+- Closed loop, fair oracle, height alone: drift falls clearly with no detectable loss in success. Drift -0.0036 [-0.0052, -0.0019] (med) and -0.0060 [-0.0075, -0.0046] (high); fraction met -0.0050 [-0.0125, +0.0031] and -0.0019 [-0.0087, +0.0050]; GPA -1.4932 [-1.8344, -1.1782] and -1.2959 [-1.5151, -1.0848].
+- Closed loop, fair oracle, speed+height: drift falls (-0.0032 [-0.0049, -0.0014] med, -0.0066 [-0.0082, -0.0051] high) but fraction met also falls (-0.0213 [-0.0313, -0.0113], -0.0269 [-0.0369, -0.0175]). Adding speed to height costs 2 to 3 pp even with the oracle.
+
+Reading: the drift benefit of lower release height appears only with the fair oracle, which knows the hidden mismatch, in the closed loop. With the nominal and learned models the selector spends the height freedom mainly on volume: in the open loop drift rises, and in the fast loop height alone lowers drift only at high mismatch (-0.0033 [-0.0062, -0.0005]; med -0.0012 [-0.0039, +0.0015]) while giving up 1.6 pp of sections meeting the target. The data do not isolate the cause beyond that. Speed+height is net negative on the target in every closed-loop cell. This is a negative result for enabling height control by default. All closed-loop differences are on oracle_nominal with a perfect verifier, 4 presets x 10 seeds.
+
 ## Open loop (selector model: nominal_physics)
 
 | variant | success | mean drift | mean GPA | height changed | h/h0 | speed changed | d drift vs off [95% CI] | d success vs off [95% CI] |

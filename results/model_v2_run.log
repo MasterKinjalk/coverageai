@@ -1,0 +1,68 @@
+[00:00:13] generated 1000000 extra rows in 45 s -> v2_extra_1000000_20261019.parquet
+[00:00:28] rows: v1 train 39986, extra 1000000, big pool 1039986, test 10014
+[00:01:02] tune[big] coverage_pct       depth  6: rounds   519 val mae 0.26692 (2 s)
+[00:01:04] tune[big] coverage_pct       depth  8: rounds   172 val mae 0.24452 (2 s)
+[00:01:06] tune[big] coverage_pct       depth 10: rounds   123 val mae 0.26203 (3 s)
+[00:01:12] tune[big] coverage_pct       depth 12: rounds   113 val mae 0.32599 (6 s)
+[00:01:30] tune[big] deposition_ul_cm2  depth  6: rounds  5000 val mae 0.00089 (18 s)
+[00:01:59] tune[big] deposition_ul_cm2  depth  8: rounds  5000 val mae 0.00066 (28 s)
+[00:02:31] tune[big] deposition_ul_cm2  depth 10: rounds  4997 val mae 0.00061 (32 s)
+[00:03:00] tune[big] deposition_ul_cm2  depth 12: rounds  4081 val mae 0.00057 (29 s)
+[00:03:20] tune[big] drift_frac         depth  6: rounds  5000 val mae 0.00088 (19 s)
+[00:03:50] tune[big] drift_frac         depth  8: rounds  5000 val mae 0.00065 (31 s)
+[00:04:23] tune[big] drift_frac         depth 10: rounds  4995 val mae 0.00061 (33 s)
+[00:04:57] tune[big] drift_frac         depth 12: rounds  4997 val mae 0.00057 (34 s)
+[00:05:17] tune[big] displacement_mm    depth  6: rounds  5000 val mae 1.07545 (20 s)
+[00:05:49] tune[big] displacement_mm    depth  8: rounds  5000 val mae 0.88002 (32 s)
+[00:06:45] tune[big] displacement_mm    depth 10: rounds  5000 val mae 0.79373 (56 s)
+[00:08:34] tune[big] displacement_mm    depth 12: rounds  4995 val mae 0.77491 (109 s)
+[00:08:44] tune[big] cov_lo             depth  6: rounds  1921 val quantile 0.49267 (9 s)
+[00:08:49] tune[big] cov_lo             depth  8: rounds   596 val quantile 0.49239 (5 s)
+[00:08:57] tune[big] cov_lo             depth 10: rounds   397 val quantile 0.49284 (8 s)
+[00:09:12] tune[big] cov_lo             depth 12: rounds   313 val quantile 0.49509 (15 s)
+[00:09:22] tune[big] cov_hi             depth  6: rounds  2122 val quantile 0.50313 (10 s)
+[00:09:28] tune[big] cov_hi             depth  8: rounds   734 val quantile 0.50309 (6 s)
+[00:09:37] tune[big] cov_hi             depth 10: rounds   484 val quantile 0.50600 (9 s)
+[00:09:56] tune[big] cov_hi             depth 12: rounds   442 val quantile 0.51680 (19 s)
+[00:09:58] tune[small] coverage_pct       depth  6: rounds   151 val mae 0.53768 (1 s)
+[00:09:59] tune[small] coverage_pct       depth  8: rounds   113 val mae 0.57748 (1 s)
+[00:10:01] tune[small] coverage_pct       depth 10: rounds    96 val mae 0.66897 (1 s)
+[00:10:03] tune[small] coverage_pct       depth 12: rounds   104 val mae 0.74244 (2 s)
+[00:10:14] tune[small] deposition_ul_cm2  depth  6: rounds  4993 val mae 0.00182 (11 s)
+[00:10:21] tune[small] deposition_ul_cm2  depth  8: rounds  2093 val mae 0.00175 (7 s)
+[00:10:28] tune[small] deposition_ul_cm2  depth 10: rounds  1805 val mae 0.00164 (7 s)
+[00:10:33] tune[small] deposition_ul_cm2  depth 12: rounds   845 val mae 0.00161 (5 s)
+[00:10:44] tune[small] drift_frac         depth  6: rounds  4999 val mae 0.00182 (11 s)
+[00:10:50] tune[small] drift_frac         depth  8: rounds  2012 val mae 0.00175 (7 s)
+[00:10:57] tune[small] drift_frac         depth 10: rounds  1783 val mae 0.00163 (7 s)
+[00:11:02] tune[small] drift_frac         depth 12: rounds   831 val mae 0.00162 (5 s)
+[00:11:14] tune[small] displacement_mm    depth  6: rounds  4999 val mae 1.99491 (12 s)
+[00:11:26] tune[small] displacement_mm    depth  8: rounds  2931 val mae 2.02023 (11 s)
+[00:11:52] tune[small] displacement_mm    depth 10: rounds  4997 val mae 2.07773 (26 s)
+[00:12:14] tune[small] displacement_mm    depth 12: rounds  2947 val mae 2.07175 (22 s)
+[00:12:15] tune[small] cov_lo             depth  6: rounds   345 val quantile 0.51253 (1 s)
+[00:12:17] tune[small] cov_lo             depth  8: rounds   266 val quantile 0.51610 (2 s)
+[00:12:19] tune[small] cov_lo             depth 10: rounds   244 val quantile 0.52735 (3 s)
+[00:12:24] tune[small] cov_lo             depth 12: rounds   224 val quantile 0.54233 (4 s)
+[00:12:26] tune[small] cov_hi             depth  6: rounds   668 val quantile 0.53503 (2 s)
+[00:12:28] tune[small] cov_hi             depth  8: rounds   418 val quantile 0.56770 (2 s)
+[00:12:32] tune[small] cov_hi             depth 10: rounds   366 val quantile 0.61872 (4 s)
+[00:12:37] tune[small] cov_hi             depth 12: rounds   347 val quantile 0.66854 (5 s)
+[00:12:39] fit A_v1_lgbm_small: 39986 rows, 2 s
+[00:12:39] A_v1_lgbm_small: coverage MAE 2.8444, vs expected 0.6425, drift 0.00300, displacement 3.414
+[00:12:52] fit B_xgb_tuned_small: 39986 rows, 13 s
+[00:12:53] B_xgb_tuned_small: coverage MAE 2.8317, vs expected 0.5129, drift 0.00149, displacement 1.923
+[00:13:03] fit C_lgbm_v1cfg_big: 1039986 rows, 10 s
+[00:13:03] C_lgbm_v1cfg_big: coverage MAE 2.8048, vs expected 0.4009, drift 0.00262, displacement 3.131
+[00:14:49] fit D_xgb_tuned_big: 1039986 rows, 106 s
+[00:14:53] D_xgb_tuned_big: coverage MAE 2.7846, vs expected 0.2430, drift 0.00056, displacement 0.758
+[00:14:55] fit regime U_gt_5 A: 35715 rows, 2 s
+[00:16:26] fit regime U_gt_5 D: 750000 rows, 91 s
+[00:16:33] fit regime family_3D A: 35975 rows, 2 s
+[00:18:08] fit regime family_3D D: 755499 rows, 95 s
+[00:18:14] fit regime hot_dry A: 48127 rows, 2 s
+[00:19:56] fit regime hot_dry D: 1011231 rows, 102 s
+[00:20:00] coverage booster on cuda: 1.0 s
+[00:20:04] coverage booster on cpu: 3.2 s
+[00:21:43] fit final v2: 1050000 rows, 99 s
+[00:22:01] done in 22.5 min -> results/model_v2.md

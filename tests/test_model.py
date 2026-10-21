@@ -154,3 +154,66 @@ def test_sensitivity_signs(trained):
     d = _pred(trained, [Conditions(4, 90, 0, 25, 50, 19, 0.5)] * len(cands), cands, "drift_frac")
     from scipy.stats import spearmanr
     assert spearmanr(vmd, d).statistic < -0.5
+
+
+# ---------------------------------------------------------------- XGBoost backend (D18)
+
+def test_unknown_backend_raises():
+    with pytest.raises(ValueError):
+        SprayModel(backend="catboost")
+
+
+def test_per_target_rounds_dict_matches_int():
+    df = _frame(1500, 11)
+    a = SprayModel(seed=2, n_estimators=15, quantile_n_estimators=10).fit_frame(df)
+    b = SprayModel(seed=2, n_estimators={t: 15 for t in ("coverage_pct", "deposition_ul_cm2",
+                                                         "drift_frac", "displacement_mm")},
+                   quantile_n_estimators={"cov_lo": 10, "cov_hi": 10}).fit_frame(df)
+    u = Setting("XR", "04", 40.0)
+    assert a.predict(X0, u) == b.predict(X0, u)
+
+
+@pytest.fixture(scope="module")
+def trained_xgb() -> SprayModel:
+    pytest.importorskip("xgboost")
+    # CPU so the test runs without a GPU; the CUDA path differs only in the device parameter
+    return SprayModel(seed=0, backend="xgboost", device="cpu", max_depth=6,
+                      learning_rate=0.1, n_estimators=150, quantile_n_estimators=100
+                      ).fit_frame(_frame(N_TRAIN, 0))
+
+
+def test_xgb_protocol_interval_and_sensitivity(trained_xgb):
+    assert isinstance(trained_xgb, Model)
+    cands = catalog.candidates()
+    batch = trained_xgb.predict_batch([X0] * len(cands), cands)
+    assert all(b.coverage_lo <= b.coverage_pct <= b.coverage_hi for b in batch)
+    assert all(0.0 <= b.drift_frac <= 1.0 and b.deposition_ul_cm2 >= 0.0 for b in batch)
+    df = _frame(2000, 77)
+    a = trained_xgb.predict_features(F.featurize_frame(df))
+    y = df["coverage_pct"].to_numpy()
+    assert 0.65 < ((y >= a["coverage_lo"]) & (y <= a["coverage_hi"])).mean() < 0.95
+    test_sensitivity_signs(trained_xgb)
+
+
+def test_xgb_save_load_roundtrip_with_and_without_data(trained_xgb, tmp_path):
+    u = Setting("ULD", "04", 40.0)
+    m2 = SprayModel.load(trained_xgb.save(tmp_path / "x.joblib"))
+    assert m2.predict(X0, u) == trained_xgb.predict(X0, u)
+    assert m2.n_train == trained_xgb.n_train and m2.data_included
+    m3 = SprayModel.load(trained_xgb.save(tmp_path / "x_nodata.joblib", include_data=False))
+    assert m3.predict(X0, u) == trained_xgb.predict(X0, u)
+    assert not m3.data_included and m3.n_train == 0
+    with pytest.raises(RuntimeError):
+        m3.fit([(X0, u, Outcome(30.0, 1.0, 0.1, 10.0, 100.0))])
+
+
+def test_xgb_fit_appends_and_refits():
+    pytest.importorskip("xgboost")
+    m = SprayModel(seed=1, backend="xgboost", device="cpu", n_estimators=20,
+                   quantile_n_estimators=20).fit_frame(_frame(1500, 5))
+    n0 = m.n_train
+    u = Setting("XR", "04", 40.0)
+    before = m.predict(X0, u).coverage_pct
+    m.fit([(X0, u, Outcome(before + 40.0, 1.0, 0.1, 10.0, 100.0)) for _ in range(300)])
+    assert m.n_train == n0 + 300
+    assert m.predict(X0, u).coverage_pct > before + 10.0

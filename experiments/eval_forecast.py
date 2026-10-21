@@ -256,8 +256,7 @@ def write_md(raw: dict, tab: pd.DataFrame, path: Path) -> None:
          "arm minus forecaster-off on the same passes; brackets are 95% paired-bootstrap CIs over "
          "seeds; `*` = CI excludes 0.\n"]
     if raw.get("headline"):
-        L.append(raw["headline"].rstrip() + "
-")
+        L.append(raw["headline"].rstrip() + "\n")
     verdict = raw.get("verdict")
     if verdict:
         L.append(verdict.rstrip() + "\n")
@@ -291,12 +290,10 @@ def write_md(raw: dict, tab: pd.DataFrame, path: Path) -> None:
         L.append("")
     sens = raw.get("sensitivity")
     if sens:
-        L.append("## Why the headroom is small: wind sensitivity of the chosen settings
-")
+        L.append("## Why the headroom is small: wind sensitivity of the chosen settings\n")
         L.append("Mismatch-free physics at the (x, u) pairs the forecaster-off fast loop actually chose: "
                  "mean change when the wind is 30% stronger (a 1-sd gust at mismatch high). Mean over "
-                 "seeds and mismatch levels.
-")
+                 "seeds and mismatch levels.\n")
         L.append("| preset | d coverage (pp) | max abs d coverage (pp) | d drift fraction (x1e-3) |")
         L.append("|---|---|---|---|")
         for r in sens:
