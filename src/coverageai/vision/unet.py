@@ -18,9 +18,9 @@ import math
 import os
 import time
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 import cv2
 import numpy as np
@@ -782,6 +782,12 @@ class UNetVerifier:
     # -- Verifier protocol
     def measure(self, image: np.ndarray, px_per_mm: float) -> CardMeasurement:
         return self._measure_full(image, px_per_mm)[0]
+
+    def measure_full(self, image: np.ndarray, px_per_mm: float
+                     ) -> tuple[CardMeasurement, np.ndarray, np.ndarray]:
+        """(measurement, stain mask, card ROI mask) from one inference (same interface as
+        ``ClassicalVerifier.measure_full``)."""
+        return self._measure_full(image, px_per_mm)
 
     def _measure_full(self, image: np.ndarray, px_per_mm: float) -> tuple[CardMeasurement, np.ndarray, np.ndarray]:
         t0 = time.perf_counter()

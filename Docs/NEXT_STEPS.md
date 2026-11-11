@@ -1,13 +1,22 @@
-# Status and handoff (2026-10-19)
+# Status and handoff (2026-11-10)
 
 For the next Claude Code session or teammate. Read `README.md` for setup, then this file, then the
 final scorecard `results/scorecard.md` (every proposal criterion and extension with its number,
-95% CI and source file) and `Docs/decisions.md` (D1-D17).
+95% CI and source file) and `Docs/decisions.md` (D1-D22).
 
 All planned work streams are finished and the final report is built (`reports/final/`), with no
 pending inputs left. The only open criterion is the real-card one, blocked by data access.
 
-## Finished in this session
+## Finished on 2026-11-10
+
+* One nozzle per field in the app: by default the model picks one nozzle and only pressure varies (D19).
+* Operator recommendations: which of pressure, travel speed and boom height to change for sections below target (D20).
+* Model outputs and run-to-run changes shown in the app (D21).
+* Live paper cards and one timeline in the replay, plus the feedback charts tied to panel D (D22).
+* Dead code and orphan outputs removed.
+* README brought up to date.
+
+## Finished in the earlier session (2026-10-19)
 
 * Wind forecaster: full 20-seed grid (320 cells) run; negative result, default off (`results/forecast_eval.md`, headline in `results/forecast_eval_headline.md`, figure `experiments/figures/forecast_eval.png`, decision D13). Three committed syntax errors in `experiments/eval_forecast.py` fixed.
 * Hybrid predictor: full 20-seed closed-loop stage run; not better than `SprayModel`, default stays `spray` (`results/hybrid_eval.md`, verdict from `results/hybrid_eval_notes.md`, D14).
@@ -27,7 +36,19 @@ pending inputs left. The only open criterion is the real-card one, blocked by da
 2. **Team checks before submission.** The report keeps `TEAM TO CONFIRM` marks: contributions of Emery and Junjie, whether the Zenodo request was sent, references [9]-[11] and [15]-[17]. `Docs/ai_usage_log.md` must have a line for every session (the post-midterm sessions are logged by the orchestrator).
 3. **Known misses that stay misses** (do not tune them away): out-of-generator class agreement on the Simões synthetic cards (B0 86.3 %, B1 88.3 % vs 90 %); volume against the card-aware oracle (unreachable by construction); residual variance does not fall across passes.
 4. Optional, not required by the proposal: a paired 20-seed closed-loop run of travel-speed control on the shipped 2 km/h grid (would settle the inconclusive D11 verdict); expose the hybrid model in the app (speed, boom height and forecaster are exposed since D17); rerun the rendered-card verifier ablation (`closed_loop.py`, B0/B1 verifiers) with 20 seeds instead of 5 now that the machine is fast. A full 40-card app pass with the U-Net reader takes about 30 s on the idle desktop; under heavy CPU load from parallel experiments it may not finish for minutes.
-5. **SprayModel v2 (D18), team decision.** A GPU-trained XGBoost predictor (1M extra simulator rows) cuts the coverage error against the noise-free coverage from 0.64 to 0.24 pp and drift/displacement errors by about 80 %. In the closed loop `spray_model_v2_fast` meets C_req in +0.4 to +0.7 pp more segments than v1 (CIs exclude 0), with volume unchanged and drift +2-3 % relative. The default stays v1; the report and scorecard are built on v1 and were not regenerated. Decide whether to adopt v2_fast (then rerun `closed_loop.py` and rebuild the report). Install xgboost with `uv pip install xgboost==3.4.1` (keeps the CUDA torch; `uv sync --extra vision --extra gpu` also works but restores the CPU torch); files are gitignored, regenerate with `uv run --no-sync python experiments/train_spray_v2.py --cost-cap 1800 --tag fast --skip-small`. Results: `results/model_v2_fast.md`, `results/model_v2_closed_loop/compare_v2_fast.md`. README is not yet updated for the `gpu` extra.
+5. **SprayModel v2 (D18), team decision.** A GPU-trained XGBoost predictor (1M extra simulator rows) cuts the coverage error against the noise-free coverage from 0.64 to 0.24 pp and drift/displacement errors by about 80 %. In the closed loop `spray_model_v2_fast` meets C_req in +0.4 to +0.7 pp more segments than v1 (CIs exclude 0), with volume unchanged and drift +2-3 % relative. The default stays v1; the report and scorecard are built on v1 and were not regenerated. Decide whether to adopt v2_fast (then rerun `closed_loop.py` and rebuild the report). Install xgboost with `uv pip install xgboost==3.4.1` (keeps the CUDA torch; `uv sync --extra vision --extra gpu` also works but restores the CPU torch); files are gitignored, regenerate with `uv run --no-sync python experiments/train_spray_v2.py --cost-cap 1800 --tag fast --skip-small`. Results: `results/model_v2_fast.md`, `results/model_v2_closed_loop/compare_v2_fast.md`. README now covers the `gpu` extra (done 2026-11-10).
+
+6. **Known clutter and risks from the 2026-11-10 audit** (none blocks the submission):
+   * The mock module stack is still reachable from the app ("Simple test model") and from experiments.
+   * Nominal physics is implemented in three places: `simulator.nominal_arrays`, `loop.FairOracleModel.predict_arrays` and `model/hybrid.PhysicsBase.arrays`.
+   * Bootstrap CI helpers are copied across five experiment scripts, with no shared `stats` module.
+   * `reports/midterm/build.py` is a near copy of `reports/final/build.py` and reads live results, so the midterm is frozen only as the committed HTML and PDF.
+   * Model weights (about 50 MB) are plain git blobs, not LFS.
+   * `experiments/demo_screenshots.py` live mode still clicks controls that no longer exist (the Step button and old tab names); the report uses the `--static` path.
+
+7. **New app features are not evaluated across seeds (D19, D20).** The one-nozzle-per-field default and the operator recommendations were checked on single app runs only. Two paired 20-seed runs would settle them: closed loop with `nozzle_lock` from `best_nozzle` against free nozzle choice (share of sections meeting C_req, volume, drift), and a re-spray experiment that applies each recommendation and measures whether the section then meets the target. Until then, describe both as app behaviour, not as results.
+8. **The final report predates the 2026-11-10 app.** `reports/final/` was not rebuilt. Its app paragraph (`APP_CHECK` in `reports/final/build.py`) describes the earlier layout (sidebar step controls, free nozzle choice). Update that text before the next rebuild. The report's numbers are unaffected: no experiment was rerun.
+9. **The section inspector does not follow the replay.** The replay runs in an embedded page that cannot report its position to Streamlit. A two-way component (`st.components.v1.declare_component`) would let a click in the replay drive the inspector.
 
 ## Rebuilding the final report
 

@@ -5,7 +5,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 
-from coverageai.app_logic import CLASS_COLORS, CLASS_ORDER
+from coverageai.app_logic import CLASS_COLORS
 import labels as L
 
 BG = "#0e1117"
@@ -23,8 +23,13 @@ def _style(ch: alt.Chart | alt.LayerChart, height: int) -> alt.Chart:
             .configure_view(stroke=None))
 
 
+def _mark(k: int | None):
+    """Vertical rule at section ``k`` (the inspected section)."""
+    return alt.Chart(pd.DataFrame({"k": [k]})).mark_rule(color="#4da3ff", strokeWidth=1.5).encode(x="k:Q")
+
+
 def coverage_timeseries(df: pd.DataFrame, c_req: float, marginal_min: float, n_total: int,
-                        height: int = 280):
+                        height: int = 280, mark: int | None = None):
     """Predicted (raw), corrected, measured and true coverage with class bands and C_req."""
     top = max(60.0, float(np.nanmax(df[["predicted", "corrected", "measured", "true"]].to_numpy())) * 1.1) \
         if len(df) else 60.0
@@ -52,19 +57,23 @@ def coverage_timeseries(df: pd.DataFrame, c_req: float, marginal_min: float, n_t
         strokeDash=dash, tooltip=[alt.Tooltip("k:Q", title="Field section"), alt.Tooltip("series:N", title="Series"),
                  alt.Tooltip("v:Q", title="Coverage (%)", format=".1f")])
     rule = alt.Chart(pd.DataFrame({"y": [c_req]})).mark_rule(color="#3ddc97", strokeDash=[6, 4]).encode(y="y:Q")
-    return _style((band + rule + lines).resolve_scale(color="independent"), height)
+    layers = band + rule + lines
+    if mark is not None:
+        layers = layers + _mark(mark)
+    return _style(layers.resolve_scale(color="independent"), height)
 
 
-def bias_chart(df: pd.DataFrame, n_total: int, height: int = 280):
-    """Applied feedback bias (line) and the residual the controller sees (bars), in pp."""
+def bias_chart(df: pd.DataFrame, n_total: int, height: int = 280, mark: int | None = None):
+    """The numbers of replay panel D: applied feedback correction (line) and the prediction
+    error left after it, actual minus prediction after feedback (bars), in pp."""
     x = alt.X("k:Q", title="Field section", scale=alt.Scale(domain=[1, max(n_total, 2)]))
-    long = df.melt(id_vars="k", value_vars=["bias", "residual"], var_name="series", value_name="pp")
+    long = df.melt(id_vars="k", value_vars=["bias", "error"], var_name="series", value_name="pp")
     long["series"] = long["series"].map(L.series)
-    colors = alt.Scale(domain=[L.series("bias"), L.series("residual")], range=[C_BIAS, C_MEAS])
+    colors = alt.Scale(domain=[L.series("bias"), L.series("error")], range=[C_BIAS, C_TRUE])
     col = alt.Color("series:N", scale=colors, title=None,
                     legend=alt.Legend(orient="top", labelColor=TEXT))
     y = alt.Y("pp:Q", title="Percentage points (pp)")
-    bars = alt.Chart(long[long["series"] == L.series("residual")]).mark_bar(opacity=0.45, size=6).encode(
+    bars = alt.Chart(long[long["series"] == L.series("error")]).mark_bar(opacity=0.45, size=6).encode(
         x=x, y=y, color=col, tooltip=[alt.Tooltip("k:Q", title="Field section"), alt.Tooltip("series:N", title="Series"),
                  alt.Tooltip("pp:Q", title="pp", format="+.2f")])
     line = alt.Chart(long[long["series"] == L.series("bias")]).mark_line(
@@ -72,36 +81,10 @@ def bias_chart(df: pd.DataFrame, n_total: int, height: int = 280):
         x=x, y=y, color=col, tooltip=[alt.Tooltip("k:Q", title="Field section"), alt.Tooltip("series:N", title="Series"),
                  alt.Tooltip("pp:Q", title="pp", format="+.2f")])
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=GRID).encode(y="y:Q")
-    return _style(zero + bars + line, height)
-
-
-def field_strip_chart(df: pd.DataFrame, height: int | None = None):
-    """Serpentine tile map of segments colored by class, retreat flags and current ring."""
-    df = df.assign(status=df["status"].map(L.cov_class), retreat_txt=df["retreat"].map(
-        {True: "Needs re-spraying", False: "No"}))
-    n_rows = int(df["row"].max()) + 1
-    n_cols = int(df["col"].max()) + 1
-    h = height or max(120, 46 * n_rows + 30)
-    color = alt.Color("status:N", scale=alt.Scale(domain=[L.cov_class(c) for c in CLASS_COLORS],
-                                                  range=list(CLASS_COLORS.values())),
-                      legend=alt.Legend(title="Coverage", orient="top"))
-    xs = alt.X("col:O", axis=None, scale=alt.Scale(paddingInner=0.08))
-    ys = alt.Y("row:O", axis=alt.Axis(title="Pass (lap)", labelColor=TEXT, titleColor=TEXT),
-               scale=alt.Scale(paddingInner=0.1))
-    tip = [alt.Tooltip("seg:Q", title="Field section"), alt.Tooltip("status:N", title="Coverage"),
-           alt.Tooltip("measured:Q", title="Card reading (%)", format=".1f"),
-           alt.Tooltip("true:Q", title="Actual coverage (%)", format=".1f"),
-           alt.Tooltip("retreat_txt:N", title="Re-spraying")]
-    tiles = alt.Chart(df).mark_rect(cornerRadius=4).encode(x=xs, y=ys, color=color, tooltip=tip)
-    labels = alt.Chart(df).mark_text(fontSize=10, color="#0e1117", fontWeight="bold").encode(
-        x=xs, y=ys, text="seg:Q")
-    flags = alt.Chart(df[df["retreat"]]).mark_text(text="✖", fontSize=18, color="#ffffff",
-                                                   dy=-13, dx=12).encode(x=xs, y=ys)
-    cur = alt.Chart(df[df["current"]]).mark_rect(fill=None, stroke="#ffffff", strokeWidth=3,
-                                                 cornerRadius=4).encode(x=xs, y=ys)
-    ch = (tiles + labels + flags + cur).properties(width="container", height=h, background=PANEL)
-    return (ch.configure_axis(domainColor=GRID, labelColor=TEXT, titleColor=TEXT)
-              .configure_legend(labelColor=TEXT, titleColor=TEXT).configure_view(stroke=None))
+    layers = zero + bars + line
+    if mark is not None:
+        layers = layers + _mark(mark)
+    return _style(layers, height)
 
 
 def line_xy(df: pd.DataFrame, x: str, y: str, xtitle: str, ytitle: str, color: str = C_PRED,

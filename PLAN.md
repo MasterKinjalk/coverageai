@@ -1,5 +1,7 @@
 # CoverageVision AI: Execution Plan for Subagents
 
+> This is the original work-package plan, kept for history. Current status is in `Docs/NEXT_STEPS.md` and design decisions are in `Docs/decisions.md`. Paths below were corrected on 2026-11-10; the rest is as first written.
+
 ABE 598 (Digital Agriculture), Fall 2026. Team: Emery Brewer (remote), Junjie Ao, Kinjalk Parth.
 Plan drafted 2026-10-18. Orchestrator: Opus (main session). Executors: Sonnet subagents.
 
@@ -11,7 +13,7 @@ Plan drafted 2026-10-18. Orchestrator: Opus (main session). Executors: Sonnet su
 - Each WP below has: owner (team member accountable), inputs, outputs, acceptance criteria, and a ready-to-paste agent brief. Every agent gets **Section 3 (Contracts)** and **Section 2 (Ground truth)** pasted into its prompt; those are the only shared assumptions.
 - After each wave: an Opus review pass (correctness + contract conformance), `uv run pytest` green, `uv run python -m coverageai.e2e --smoke` green, then merge to `main`.
 - No agent edits `src/coverageai/contracts.py` or `config/spec.yaml` except WP-00. Contract changes go through the orchestrator and get a version bump.
-- Every agent appends one line per session to `docs/ai_usage_log.md` (date, WP, model, what it produced). The course allows AI use; the report should disclose it.
+- Every agent appends one line per session to `Docs/ai_usage_log.md` (date, WP, model, what it produced). The course allows AI use; the report should disclose it.
 
 ---
 
@@ -134,7 +136,7 @@ coverageai/
   app/                      # WP-22 Streamlit demo
   reports/                  # WP-40/41 midterm + final
   tests/
-  docs/ai_usage_log.md, docs/decisions.md
+  Docs/ai_usage_log.md, docs/decisions.md
 ```
 
 Core records (`contracts.py`, `SCHEMA_VERSION = "1.0"`):
@@ -197,7 +199,7 @@ Card geometry default: 76 × 26 mm WSP, rendered at 600 dpi (23.62 px/mm). Image
 
 ## 4. Work packages
 
-Notation: **Owner** = accountable team member (agents build, the owner reviews and presents). **Deps** = WPs that must merge first. All agents: Sonnet, worktree isolation, must add tests, must update `docs/ai_usage_log.md`.
+Notation: **Owner** = accountable team member (agents build, the owner reviews and presents). **Deps** = WPs that must merge first. All agents: Sonnet, worktree isolation, must add tests, must update `Docs/ai_usage_log.md`.
 
 ### Wave 0 (sequential, gate for everything)
 
@@ -268,7 +270,7 @@ Notation: **Owner** = accountable team member (agents build, the owner reviews a
 
 **WP-13 Learned verifier B1 (U-Net)** (Owner: Kinjalk)
 - `vision/unet.py`: segmentation-models-pytorch U-Net, lightweight encoder (mobilenet_v2 or resnet18, ImageNet weights), 256–384 px tiles, BCE + Dice, heavy photometric/geometric augmentation. Train on WP-03 synthetic v1; validate on held-out synthetic; test on Simões synthetic (out-of-generator) and real tiles.
-- **No local GPU.** Provide (a) a CPU path with a small model and few epochs that fits in ≤ 2 h, and (b) a Colab notebook `notebooks/train_unet_colab.ipynb` for full training. Export weights to `models/unet_v1.pt` (gitignored; publish via release or HF Hub only after user confirms).
+- **No local GPU.** Provide (a) a CPU path with a small model and few epochs that fits in ≤ 2 h, and (b) a Colab notebook `notebooks/train_unet_gpu.ipynb` for full training. Export weights to `models/unet_v1.pt` (gitignored; publish via release or HF Hub only after user confirms).
 - Coverage from mask; counts via watershed on the mask (secondary); optional Cellpose zero-shot comparison for counts if time permits.
 - Accept: synthetic coverage MAE ≤ 2 pp, class agreement ≥ 90%, CPU inference ≤ 2 s/card; real-card error reported with sample size, framed as a sanity check.
 
@@ -325,7 +327,7 @@ Critical path: WP-00 → WP-02 → (WP-03, WP-10) → WP-20 → WP-21. Mocks let
 3. Merge order: WP-01, WP-02, then others (rebase on main). Opus review per PR (`/code-review` or cavecrew-reviewer), fix, merge.
 4. Wave 2: WP-10…WP-13 in parallel. WP-13 GPU training step is handed to the user (Colab) if CPU path misses the target.
 5. Wave 3: WP-20 alone, then WP-21 and WP-22 in parallel.
-6. After each wave: update `reports/progress.md` (feeds the contribution table) and post a short written Teams update (proposal promised this; user posts it).
+6. After each wave: update the contribution table (`reports/progress.md` was planned but does not exist) and post a short written Teams update (proposal promised this; user posts it).
 
 Agent brief template:
 ```
@@ -333,7 +335,7 @@ You are implementing WP-XX of the CoverageVision AI project (ABE 598). Repo: <pa
 Read PLAN.md Sections 2 and 3 first; they are binding. Your task: <WP text>.
 Rules: Python 3.12 via `uv run`; follow contracts exactly; do not edit contracts.py or
 config/spec.yaml; add pytest tests; keep functions vectorized where noted; no network
-uploads or git pushes; append one line to docs/ai_usage_log.md. Finish with: files
+uploads or git pushes; append one line to Docs/ai_usage_log.md. Finish with: files
 changed, tests run + result, acceptance criteria met/missed with numbers, open questions.
 ```
 

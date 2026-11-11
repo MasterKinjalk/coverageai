@@ -107,6 +107,9 @@ selector:
   boom_height_options_m: []
   boom_height_band_frac: 0.25
   boom_overlap_factor: 1.3
+  # Optional nozzle lock (opt-in, decision D19) is not a spec value: it is set per field on the
+  # selector (ConstrainedSelector.nozzle_lock = (family, size); best_nozzle picks it). Unset =
+  # any nozzle per segment, the v1.0 behaviour used by every experiment in results/.
 
 pass:
   segments: 40

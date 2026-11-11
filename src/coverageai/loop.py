@@ -243,9 +243,29 @@ def _perfect_measurement(outcome: Outcome) -> CardMeasurement:
 
 
 def _scalar_info(info: dict) -> dict:
-    cands = info.get("candidates")
-    n = len(cands) if hasattr(cands, "__len__") else cands
+    """Number of candidates the selector looked at: ``n_candidates`` (ConstrainedSelector), or
+    the ``candidates`` list / count of the Selector protocol (mocks, best_fixed)."""
+    n = info.get("n_candidates")
+    if n is None:
+        cands = info.get("candidates")
+        n = len(cands) if hasattr(cands, "__len__") else cands
     return {"sel_n_candidates": n}
+
+
+def verified_records(logs: Sequence[SegmentLog]) -> list[tuple[Conditions, Setting, Outcome]]:
+    """Slow-loop training records of a pass: the MEASURED coverage (and measured stains/cm2 if
+    the reader gives them) with the other outcome fields from the simulator, because the card
+    only measures coverage. Conditions are the point-forecast wind (``extra["fc_wind_ms"]``)
+    when a forecaster was on, i.e. what the controller predicted with, else the nominal x."""
+    recs = []
+    for lg in logs:
+        o = lg.outcome
+        stains = lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None else o.stains_per_cm2
+        x_rec = (lg.x if "fc_wind_ms" not in lg.extra
+                 else dataclasses.replace(lg.x, wind_speed_ms=lg.extra["fc_wind_ms"]))
+        recs.append((x_rec, lg.u, Outcome(lg.meas.coverage_pct, o.deposition_ul_cm2,
+                                          o.drift_frac, o.displacement_mm, stains, None)))
+    return recs
 
 
 def run_pass(conditions: list[Conditions], policy: str, modules: Modules, seed: int,
@@ -451,20 +471,13 @@ def run_passes_slow(conditions_list, modules: Modules, seed: int, mismatch: str,
             logs = run_pass(list(passes[i % len(passes)]), "fast_slow", modules, seed + 1009 * i,
                             mismatch, c_req, f"fast_slow_p{i}", feedback=fb, render=render,
                             forecaster=fc)
-            new = []
             for lg in logs:
                 lg.extra["slow_pass"] = i
                 if corr is not None:
                     lg.extra["slow_global_corr"] = corr.global_corr
                     lg.extra["slow_n_records"] = corr.n_records
-                o = lg.outcome
-                stains = lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None else o.stains_per_cm2
-                x_rec = (lg.x if "fc_wind_ms" not in lg.extra
-                         else dataclasses.replace(lg.x, wind_speed_ms=lg.extra["fc_wind_ms"]))
-                new.append((x_rec, lg.u, Outcome(lg.meas.coverage_pct, o.deposition_ul_cm2,
-                                                o.drift_frac, o.displacement_mm, stains, None)))
-            if i < n_passes - 1:
-                modules.model.fit(new)       # residual: refit correction; refit: legacy
+            if i < n_passes - 1:             # residual: refit correction; refit: legacy
+                modules.model.fit(verified_records(logs))
             all_logs.extend(logs)
     finally:
         modules.model = saved_model

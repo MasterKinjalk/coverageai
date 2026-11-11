@@ -92,6 +92,17 @@ class ClassicalVerifier:
 
     # ------------------------------------------------------------------ API
     def measure(self, image: np.ndarray, px_per_mm: float) -> CardMeasurement:
+        return self._measure(image, px_per_mm)[0]
+
+    def measure_full(self, image: np.ndarray, px_per_mm: float
+                     ) -> tuple[CardMeasurement, np.ndarray, np.ndarray]:
+        """(measurement, stain mask, card ROI mask) from one detection; masks are bool and in
+        the input image frame. Same numbers as ``measure`` and same masks as ``segment``."""
+        meas, geo, mask = self._measure(image, px_per_mm)
+        roi = geo.to_original(np.ones(mask.shape, np.uint8))
+        return meas, geo.to_original(mask.astype(np.uint8)), roi
+
+    def _measure(self, image: np.ndarray, px_per_mm: float):
         t0 = time.perf_counter()
         if px_per_mm <= 0:
             raise ValueError("px_per_mm must be positive")
@@ -106,14 +117,14 @@ class ClassicalVerifier:
                    (cov > self.percolation_cov_pct and stats["largest_cc_frac"] > self.percolation_frac))
         self.last_info = {**info, **stats, "geometry": geo.mode, "found_quad": geo.found_quad,
                           "card_px": card_px, "coverage_pct": cov}
-        return CardMeasurement(
+        return CardMeasurement(      # runtime_s covers the measurement only, not the mask warp
             coverage_pct=float(cov),
             stains_per_cm2=stats["stains_per_cm2"],
             dv01_um=stats["dv01_um"], dv05_um=stats["dv05_um"], dv09_um=stats["dv09_um"],
             coverage_class=coverage_class(cov, self.acceptable_min, self.marginal_min),
             saturated=sat,
             runtime_s=time.perf_counter() - t0,
-        )
+        ), geo, mask
 
     def segment(self, image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Return (stain_mask, card_roi_mask), both bool and in the input image frame."""

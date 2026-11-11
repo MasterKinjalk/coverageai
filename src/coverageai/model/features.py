@@ -68,11 +68,6 @@ def _lookup_setting(u: Setting) -> tuple[float, ...]:
     return row
 
 
-def clear_cache() -> None:
-    """Drop cached catalog lookups (call after the catalog or spec changes)."""
-    _SETTING_CACHE.clear()
-
-
 def setting_array(us: Sequence[Setting]) -> np.ndarray:
     get = _SETTING_CACHE.get
     rows = []

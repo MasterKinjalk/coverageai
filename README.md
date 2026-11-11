@@ -6,7 +6,7 @@
 
 Closed-loop precision spraying, evaluated in a physics-informed simulator (ABE 598, Fall 2026).
 
-![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white) ![uv](https://img.shields.io/badge/env-uv-DE5FE9) ![Streamlit](https://img.shields.io/badge/demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white) ![LightGBM](https://img.shields.io/badge/model-LightGBM%20%2B%20CQR-2E8B57) ![PyTorch](https://img.shields.io/badge/vision-U--Net%20(PyTorch)-EE4C2C?logo=pytorch&logoColor=white) ![tests](https://img.shields.io/badge/tests-411%20passing-3ddc97)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white) ![uv](https://img.shields.io/badge/env-uv-DE5FE9) ![Streamlit](https://img.shields.io/badge/demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white) ![LightGBM](https://img.shields.io/badge/model-LightGBM%20%2B%20CQR-2E8B57) ![PyTorch](https://img.shields.io/badge/vision-U--Net%20(PyTorch)-EE4C2C?logo=pytorch&logoColor=white) ![tests](https://img.shields.io/badge/tests-458%20passing-3ddc97)
 
 <img src="Docs/media/field_run.gif" alt="Animated replay of a closed-loop field pass: coverage map filling in section by section, with coverage, wind, drift and feedback charts" width="100%">
 
@@ -60,7 +60,17 @@ Every section leaves a rendered water-sensitive paper card (scanner or phone-cam
 
 <img src="Docs/media/app_field_run.png" alt="Streamlit demo app, Field run tab: sidebar with weather scenario, hidden mismatch, control strategy and target coverage; the five-step loop; and the animated field replay" width="100%">
 
-Four tabs: **Field run** (the closed loop above, with per-section card, chosen nozzle and selector ranking), **Compare strategies** (open loop vs. feedback vs. oracles), **How the simulator works** (the spray lab), and **Nozzle explorer**. Settings can be preset in the URL, for example `http://localhost:8501/?preset=hot_dry&mismatch=high&policy=fast`.
+Four tabs: **Field run (closed loop)**, **Compare strategies** (open loop vs. feedback vs. oracles), **How the simulator works** (the spray lab), and **Nozzle explorer**. Settings can be preset in the URL, for example `http://localhost:8501/?preset=hot_dry&mismatch=high&policy=fast`.
+
+The **Field run** tab has these parts, top to bottom:
+
+* One animated replay. The field map, the water-sensitive paper card of the section being sprayed (with the outline the card reader found), and the coverage, weather, drift and feedback panels all move on one timeline. The replay has its own play, speed and scrub controls. `?cards=0` turns the card pictures off.
+* Run-level results.
+* **What the model decided**, with four tabs: operator recommendations, changes along the field, changes since the previous run, and all model outputs (with a CSV download). The recommendations (decision D20, `src/coverageai/recommend.py`) cover each section whose card reads below the target. They say which of pressure, travel speed and boom height to change and by how much, using the predictive model.
+* **Section inspector**: the details of one section.
+* **Feedback loop over the run**: charts that use the same numbers as panel D of the replay.
+
+The sidebar item **Nozzle on the boom** follows what a real sprayer does. By default the model picks one nozzle for the whole field and only the pressure varies (decision D19). You can name a specific nozzle instead. "Any nozzle per section" is kept for experiments only. In the URL: `?nozzle=auto|free|XR-04`.
 
 ## Results at a glance
 
@@ -100,6 +110,8 @@ bash scripts/setup.sh            # Linux / macOS / Git Bash
 The script installs uv if missing, runs `uv sync --extra vision` (numpy, LightGBM, OpenCV, Streamlit, torch, segmentation-models-pytorch, pytest), swaps in a CUDA build of torch when `nvidia-smi` is found, regenerates the 50k-row training table `data/datasets/v1.parquet`, and runs the smoke test.
 
 Options (both scripts): `--cuda cu128` picks the CUDA wheel index (default `cu128`, use `none` to keep the CPU torch), `--with-cards` also renders the 1200 synthetic WSP cards (~3 GB, needed for U-Net training/eval), `--with-simoes` downloads the open Simões 2025 synthetic cards (~850 MB, needed for the out-of-generator check).
+
+Optional `gpu` extra (`gpu = ["xgboost>=3.0"]` in `pyproject.toml`), only for SprayModel v2 (decision D18). To keep the CUDA torch, install it with `uv pip install xgboost==3.4.1` (`uv sync --extra vision --extra gpu` also works but restores the CPU torch). The v2 model files are gitignored. Regenerate them with `uv run --no-sync python experiments/train_spray_v2.py --cost-cap 1800 --tag fast --skip-small`. The default model stays v1.
 
 Manual install, if you prefer:
 
@@ -150,10 +162,21 @@ Experiments (each writes `results/<name>.json` + `.md`, figures in `experiments/
 | `experiments/eval_forecast.py` | short-horizon wind forecaster, 20 seeds (`results/forecast_eval.md`; negative result) |
 | `experiments/eval_hybrid.py` | physics + learned residual predictor, offline / selector / 20-seed closed loop (`results/hybrid_eval.md`) |
 | `experiments/slow_loop_diagnostic.py` | slow-loop residuals per pass |
+| `experiments/eval_classical.py` | classical card reader (B0) on a synthetic WSP set: coverage error, stain IoU, class agreement, runtime (`results/b0_synthetic.json`) |
+| `experiments/make_dataset.py` | nominal-physics training table from the simulator, Latin hypercube over conditions (`data/datasets/v1.parquet`, gitignored) |
+| `experiments/train_eval_model.py` | SprayModel v1: ridge, random forest and LightGBM on random and held-out-regime splits, sensitivity sweeps, saves `models/spray_model_v1.joblib` |
+| `experiments/train_spray_v2.py` | SprayModel v2: XGBoost on the GPU with more simulator rows and tuned depth (D18) |
+| `experiments/compare_models_closed_loop.py` | paired closed-loop comparison of two predictor files (v1 vs v2), paired-bootstrap CIs |
+| `experiments/time_predictors.py` | idle-CPU timing of `predict_batch` for saved SprayModel files (`results/predictor_timing.json`) |
+| `experiments/validate_catalog.py` | checks `data/catalog/nozzles.csv` (flow vs sqrt of pressure, GPA formula, droplet class order); prints violations |
+| `experiments/sim_trends.py` | simulator trend figure: one-at-a-time sweeps of the physics core (`sim_trends.png`) |
+| `experiments/plot_scenarios.py` | plots every weather preset over a pass (`scenarios.png`) |
+| `experiments/demo_screenshots.py` | screenshots of the demo app, or matplotlib stand-ins with `--static`; the browser mode is out of date (see the comment in the script) |
+| `experiments/readme_media.py` | README GIFs and screenshot (`Docs/media/`) |
 
 All criteria and extensions in one table: `results/scorecard.md` (written by `reports/final/build.py`).
 
-Most experiments take `--workers N`; on a big machine raise it (the laptop runs used 4 to 7). U-Net training on GPU: `Docs/gpu_training.md` or `notebooks/train_unet_gpu.ipynb`.
+`closed_loop.py`, `eval_boom_control.py`, `eval_forecast.py`, `eval_hybrid.py` and `slow_loop_diagnostic.py` take `--workers N`; on a big machine raise it (the laptop runs used 4 to 7). The other scripts are single process. U-Net training on GPU: `Docs/gpu_training.md` or `notebooks/train_unet_gpu.ipynb`.
 
 ## Layout
 
@@ -170,8 +193,26 @@ src/coverageai/      library
   model/             SprayModel (LightGBM + CQR), PhysicsResidualModel (hybrid), features
   vision/            WSP card renderer, classical reader (B0), U-Net (B1), Simões data loader
   app_logic.py, field_anim.py, spray_lab.py   back end of the Streamlit app
-app/                 Streamlit app (main.py, field run and spray lab views)
+  config.py          loads config/spec.yaml once and exposes it as a dict
+  e2e.py             end-to-end smoke test and one real pass (`python -m coverageai.e2e`)
+  integration.py     wires the real modules into `loop.Modules` (`build_modules`)
+  mocks.py           mock modules that satisfy the contracts; never used for reported results
+  units.py           unit conversions (km/h to mph, gal/acre to L/ha, ...)
+  recommend.py       operator recommendations: which of pressure, speed and boom height to change (D20)
+  physics/           first-order spray physics: droplets, evaporation, drift, coverage
+app/                 Streamlit app
+  main.py            page layout, sidebar and tabs
+  field_run_view.py  animated field replay
+  spray_lab_view.py  spray lab tab
+  static_spray_lab.html   page embedded by the spray lab tab
+  charts.py          Altair chart builders
+  labels.py          plain-English display names
+.streamlit/          app theme (config.toml)
 config/spec.yaml     all parameters, ranges and selector options
+scripts/             setup.sh and setup.ps1 (environment setup)
+notebooks/           train_unet_gpu.ipynb (U-Net training on a GPU)
+data/                catalog/ (nozzle catalog, in git); datasets/ and synthetic/ (generated, gitignored)
+models/              trained weights: U-Net, SprayModel v1, hybrid; v2 files are gitignored
 experiments/         evaluation scripts and figures
 results/             experiment outputs (json, md, csv)
 reports/midterm/     midterm report (build.py -> html/pdf)
@@ -183,5 +224,5 @@ tests/               pytest suite
 
 ## Known issues
 
-* On the old Windows laptop, three tests that write parquet failed with a pyarrow DLL error (`test_smoke_pass`, `test_e2e_run_real_writes_logs`, `test_logs_frame_and_save`). This was laptop-specific: on the new Windows 11 machine the full suite (411 tests) passes.
+* On the old Windows laptop, three tests that write parquet failed with a pyarrow DLL error (`test_smoke_pass`, `test_e2e_run_real_writes_logs`, `test_logs_frame_and_save`). This was laptop-specific: on the new Windows 11 machine the full suite (458 tests) passes.
 * Timing tests (`test_render_time_under_one_second_worst_case`) can fail when the machine is busy.
