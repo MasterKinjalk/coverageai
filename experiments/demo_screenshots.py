@@ -54,6 +54,9 @@ def find_browser() -> str | None:
 # ------------------------------------------------------------------ CDP mode
 
 async def _cdp_session(ws_url: str, app_url: str, out: Path, steps: int) -> None:
+    # NOTE (2026-11-10): the selectors below are stale. The app no longer has a "Step" button and
+    # its tabs are now "Field run (closed loop)", "Compare strategies", "How the simulator works"
+    # and "Nozzle explorer" (not "Policy comparison" / "Live pass"). The report uses the --static path.
     import websockets
     async with websockets.connect(ws_url, max_size=None) as ws:
         n = 0

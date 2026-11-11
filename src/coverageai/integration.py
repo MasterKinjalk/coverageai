@@ -25,7 +25,6 @@ verifier:
 """
 from __future__ import annotations
 
-import copy
 import json
 import os
 from dataclasses import dataclass, field
@@ -297,8 +296,3 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
         ver = make_image_verifier(verifier)
     return Modules(simulator=sim, model=mdl, selector=sel, verifier=ver, renderer=rend,
                    derive_fn=derive)
-
-
-def fresh_model(modules: Modules, template=None):
-    """A deep copy of the model so a slow-loop run does not leak refits into other runs."""
-    return copy.deepcopy(template if template is not None else modules.model)

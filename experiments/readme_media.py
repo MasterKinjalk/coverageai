@@ -169,7 +169,9 @@ def run_pass():
     c_req = float(spec()["c_req_pct"])
     mods = al.build_modules_adapter("spray", "b0")
     conds = al.make_conditions(SCENARIO["preset"], SCENARIO["seed"])
-    res = al.run_pass_wrapper(mods, conds, SCENARIO["policy"], SCENARIO["seed"], SCENARIO["mismatch"], c_req)
+    # as the app runs it by default: one nozzle for the field (D19), cards kept for the replay (D22)
+    res = al.run_pass_wrapper(mods, conds, SCENARIO["policy"], SCENARIO["seed"], SCENARIO["mismatch"], c_req,
+                              fixed_nozzle="auto", capture_cards=True)
     return res, c_req
 
 
@@ -211,7 +213,7 @@ async def rec_field(b: Browser, tmp: Path, res, c_req) -> None:
     await b.js("playing=false; sync();")
     for i in range(total + 1):
         t = n * i / total
-        await b.js(f"t={t!r}; playing=false; sync(); draw(); readout(); summary();"
+        await b.js(f"t={t!r}; playing=false; sync(); draw(); readout(); kinfo(); summary();"
                    "if (t < N) $('play').textContent = 'Pause';")   # show the playing state
         await frame2(b)
         await b.shot(frames / f"{i:04d}.png")

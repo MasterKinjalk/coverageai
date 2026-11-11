@@ -1,5 +1,10 @@
 """Animated "Field run" view: publication-style figures that play over time with a moving
-cursor. Self-contained canvas component (no Streamlit reruns, no network dependencies)."""
+cursor. Self-contained canvas component (no Streamlit reruns, no network dependencies).
+
+One timeline drives everything: the field map (A), the water-sensitive paper card of the section
+being sprayed with the card reader's outline (live, one card per section), the coverage, weather,
+drift and feedback panels (B, C, C2, D), what the controller changed since the previous section
+and the operator recommendation when a card reads below the target."""
 from __future__ import annotations
 
 import json
@@ -34,10 +39,14 @@ button:hover{background:#2b3340}button.on{background:#2f6fed;border-color:#2f6fe
 #sum>div{background:#161b22;border:1px solid #2b3340;border-radius:12px;padding:16px 24px;min-width:300px}
 #sum h2{margin:0 0 8px;font-size:16px;color:#e6edf3}
 #sum table{border-collapse:collapse;width:100%;margin-bottom:12px}#sum td{padding:3px 0;border-bottom:1px solid #2b3340}#sum td:last-child{text-align:right;color:#e6edf3;font-weight:600}
+#kinfo{position:absolute;display:none;pointer-events:none;font-size:12px;line-height:1.45;color:#c9d1d9;overflow:hidden}
+#kinfo b{color:#e6edf3;font-weight:600}#kinfo .m{color:#8a94a6}#kinfo .up{color:#3ddc97}#kinfo .dn{color:#ef5b5b}
+#kinfo .adv{display:block;margin-top:5px;padding:5px 8px;border:1px solid #2b3340;border-left:3px solid #f5b942;border-radius:6px;background:#10151c}
+#kinfo .adv.fine{border-left-color:#3ddc97}#kinfo .adv.hard{border-left-color:#ef5b5b}
 </style></head><body><div id="app">
 <div id="top"></div>
-<div id="stage"><canvas id="cv"></canvas><div id="tip"></div><div id="sum"></div></div>
-<div id="ctl"><button id="play">Pause</button><button id="restart">Restart</button><span id="spd"></span>
+<div id="stage"><canvas id="cv"></canvas><div id="kinfo"></div><div id="tip"></div><div id="sum"></div></div>
+<div id="ctl"><button id="play">Pause</button><button id="restart">Restart</button><span id="spd"></span><button id="ov" class="on" style="display:none"></button>
 <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position"><span id="pos" style="color:#8a94a6;min-width:90px;text-align:right"></span></div>
 <div id="read"></div>
 </div>
@@ -50,7 +59,13 @@ const CP='#6ea8fe',CC='#c58bff',CM='#ffb84d',CT='#e6edf3',CB='#4dd0c8',CW='#4da3
 let W=0,H=0,dpr=1,t=0,playing=true,speed=1,last=null,hover=-1,scrubbing=false;
 const BASE=0.9;
 const FONT='system-ui,-apple-system,Segoe UI,sans-serif';
-$('top').innerHTML='<span>Strategy: <b>'+D.strategy+'</b></span><span>Target coverage: <b>'+D.target+'%</b></span><span>Hidden surprises: <b>'+D.surprises+'</b></span><span>Sections: <b>'+N+'</b></span>';
+$('top').innerHTML='<span>Strategy: <b>'+D.strategy+'</b></span><span>Target coverage: <b>'+D.target+'%</b></span><span>Hidden surprises: <b>'+D.surprises+'</b></span><span>Sections: <b>'+N+'</b></span><span>Nozzle: <b>'+D.nozzle_note+'</b></span>';
+const mkImg=b=>{if(!b)return null;const i=new Image();i.src='data:image/jpeg;base64,'+b;return i};
+const IM=S.map(s=>mkImg(s.img)),OV=S.map(s=>mkImg(s.overlay));
+let showOv=true;
+if(D.has_cards&&D.overlay_name){const b=$('ov');b.style.display='';b.title=D.overlay_name;
+ const lab=()=>{b.textContent='Card outline: '+(showOv?'on':'off');b.classList.toggle('on',showOv)};lab();
+ b.onclick=()=>{showOv=!showOv;lab()}}
 $('spd').innerHTML=[0.5,1,2,4].map(s=>'<button data-s="'+s+'" class="'+(s===1?'on':'')+'">'+s+'x</button>').join(' ');
 $('spd').onclick=e=>{const s=e.target.dataset&&e.target.dataset.s;if(!s)return;speed=+s;[...$('spd').children].forEach(b=>b.classList.toggle('on',b.dataset.s===s))};
 function sync(){$('play').textContent=(t>=N)?'Replay':(playing?'Pause':'Play')}
@@ -96,15 +111,24 @@ function layout(){
  const m=10,wide=W>=760;
  let A,R;
  if(wide){const lw=Math.max(300,Math.min(W*0.4,520));A={x:m,y:m,w:lw-m,h:H-2*m};R={x:lw+m,y:m,w:W-lw-2*m,h:H-2*m}}
- else{const ah=Math.min(H*0.4,360);A={x:m,y:m,w:W-2*m,h:ah};R={x:m,y:ah+2*m,w:W-2*m,h:H-ah-3*m}}
- // heatmap panel
- const lapW=54,top=26,cbH=62,pad=6;
- const gx=A.x+lapW,gw=A.w-lapW-pad,gh=A.h-top-cbH-18;
+ else{const ah=Math.min(H*0.5,460);A={x:m,y:m,w:W-2*m,h:ah};R={x:m,y:ah+2*m,w:W-2*m,h:H-ah-3*m}}
+ // heatmap panel (upper part of the left column; the card panel takes the rest)
+ const lapW=54,top=26,pad=6;
+ const mapH=wide?Math.min(A.h,Math.max(A.h*0.46,300)):A.h*0.55;
+ const gx=A.x+lapW,gw=A.w-lapW-pad,gh=mapH-top-115;
  const cols=D.cols,rows=D.rows,g=4;
  let cw=(gw-(cols-1)*g)/cols,ch=(gh-(rows-1)*g)/rows;
  ch=Math.min(ch,cw*0.95,92);cw=Math.min(cw,ch*1.6+20);
  const gridW=cols*cw+(cols-1)*g,gridH=rows*ch+(rows-1)*g;
  LA={A:A,gx:gx,gy:A.y+top,cw:cw,ch:ch,g:g,gridW:gridW,gridH:gridH,cbY:A.y+top+gridH+38,cbH:11};
+ // card panel K: title, card image, gauge, then the text block (#kinfo)
+ const ky=LA.cbY+LA.cbH+78,K={x:A.x,y:ky,w:A.w-pad,h:A.y+A.h-ky};
+ K.imgH=D.has_cards?Math.max(0,Math.min(K.w/2.25,K.h-150)):0;
+ K.gY=K.y+22+K.imgH+9;
+ LA.K=K.h>=70?K:null;
+ const ki=$('kinfo');
+ if(LA.K){const iy=K.imgH>0?K.gY+22:K.y+22;ki.style.display='block';ki.style.left=K.x+'px';ki.style.top=iy+'px';ki.style.width=K.w+'px';ki.style.maxHeight=Math.max(0,K.y+K.h-iy)+'px'}
+ else ki.style.display='none';
  // right-hand stacked panels (shared x)
  const fr=[.31,.27,.15,.27],ids=['B','C','E','D'];PL=[];let y=R.y;
  const hs=fr.map(f=>(R.h-3*8)*f);
@@ -230,9 +254,47 @@ function drawA(){
  text('Outlined = current section',bx+bw/2,ky+14,{sz:10,c:MUT});
 }
 
+// ---------- card panel (live water-sensitive paper card of the section in view)
+function kSection(){return hover>=0?hover:cur()}
+function drawK(){
+ const K=LA.K;if(!K)return;
+ const k=kSection(),s=S[k],reached=k<=cur()&&t>=k;
+ text((D.has_cards?'Water-sensitive paper card':'Card reading')+': section '+s.number+(D.has_cards&&!D.card_read?' (shown only, not read)':''),K.x+2,K.y+13,{sz:12.5,w:600,c:CT});
+ if(K.imgH<=0)return;
+ if(showOv&&D.overlay_name){const cap='red tint: '+D.overlay_name.toLowerCase();
+  if(tw(cap,10.5)+290<K.w)text(cap,K.x+K.w,K.y+13,{al:'right',sz:10.5,c:MUT})}
+ const bx=K.x,by=K.y+22,bw=K.w,bh=K.imgH;
+ ctx.fillStyle=PLOT;rr(bx,by,bw,bh,6);ctx.fill();
+ const im=reached?((showOv&&OV[k])||IM[k]):null;
+ if(im&&im.complete&&im.naturalWidth){const sc=Math.min(bw/im.naturalWidth,bh/im.naturalHeight),w=im.naturalWidth*sc,h=im.naturalHeight*sc;
+  ctx.save();rr(bx,by,bw,bh,6);ctx.clip();ctx.drawImage(im,bx+(bw-w)/2,by+(bh-h)/2,w,h);ctx.restore()}
+ else text(reached?'Loading card ...':'Not sprayed yet',bx+bw/2,by+bh/2+4,{al:'center',sz:12,c:MUT});
+ ctx.strokeStyle='#3a4454';ctx.lineWidth=1;rr(bx+.5,by+.5,bw-1,bh-1,6);ctx.stroke();
+ // gauge: coverage classes, target, card reading (dot) and actual (ring)
+ const gy=K.gY,gh=9,GX=v=>bx+Math.max(0,Math.min(1,v/RB.max))*bw,cl=D.legend,bd=D.bands;
+ [[0,bd.border_min,cl[2].color],[bd.border_min,bd.good_min,cl[1].color],[bd.good_min,RB.max,cl[0].color]].forEach(a=>{ctx.fillStyle=hex(a[2],.32);ctx.fillRect(GX(a[0]),gy,GX(a[1])-GX(a[0]),gh)});
+ const tx=GX(D.target);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(tx,gy-3);ctx.lineTo(tx,gy+gh+3);ctx.stroke();
+ if(reached){ctx.fillStyle=CM;ctx.beginPath();ctx.arc(GX(s.card),gy+gh/2,5,0,6.283);ctx.fill();
+  ctx.strokeStyle=CT;ctx.lineWidth=1.8;ctx.beginPath();ctx.arc(GX(s.actual),gy+gh/2,5,0,6.283);ctx.stroke()}
+}
+function kinfo(){
+ const el=$('kinfo');if(!LA||!LA.K)return;
+ const k=kSection(),s=S[k],reached=k<=cur()&&t>=k;let h='';
+ if(!reached)h='<span class="m">Section '+s.number+' has not been sprayed yet.</span>';
+ else{
+  h='<span style="color:'+CM+'">&#9679;</span> <b>Card reading '+pct(s.card)+'</b> ('+s.label+') &middot; <span class="m">&#9675; actual</span> '+pct(s.actual)+' &middot; <span class="m">target</span> '+D.target+'%';
+  if(k>0){const d=s.card-S[k-1].card;h+='<br><span class="'+(d>=0?'up':'dn')+'">'+(d>=0?'&#9650; +':'&#9660; ')+d.toFixed(1)+' pp</span> <span class="m">'+(d>=0?'better':'worse')+' than the previous card</span>'}
+  h+='<br><span class="m">Setting</span> '+s.nozzle;
+  h+='<br><span class="m">Model changed</span> '+(k===0?'first section':(s.changed.length?s.changed.join('; '):'nothing since the previous section'));
+  if(s.advice.length)h+='<span class="adv'+(s.advice_status==='unreachable'?' hard':'')+'"><b>Recommendation.</b> '+s.advice.join('; ')+'</span>';
+  else if(s.advice_status==='ok')h+='<span class="adv fine"><b>On target.</b> No change needed.</span>';
+ }
+ if(el._h!==h){el.innerHTML=h;el._h=h}
+}
+
 function draw(){
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
- drawA();drawB(PL[0]);drawC(PL[1]);drawE(PL[2]);drawD(PL[3]);
+ drawA();drawK();drawB(PL[0]);drawC(PL[1]);drawE(PL[2]);drawD(PL[3]);
 }
 
 // ---------- readout / tooltip / summary
@@ -247,6 +309,7 @@ function rowsFor(k){
  h+='<span class="m">Drift</span> '+s.drift_pct.toFixed(1)+'% &middot; <span class="m">feedback</span> '+(s.feedback_pp>=0?'+':'')+s.feedback_pp.toFixed(1)+' pp &middot; <span class="m">error</span> '+(s.error_pp>=0?'+':'')+s.error_pp.toFixed(1)+' pp';
  if(s.respray)h+=' &middot; <b style="color:#ff5a5a">&#10006; needs re-spraying</b>';
  if(s.no_nozzle)h+=' &middot; <b style="color:#f5b942">no nozzle meets target</b>';
+ if(s.changed.length)h+='<br><span class="m">Model changed</span> '+s.changed.join('; ');
  return h}
 function readout(){
  const k=hover>=0?hover:cur();const h=rowsFor(k);const el=$('read');
@@ -259,15 +322,15 @@ function summary(){
  if(t<N)sumClosed=false;
  const show=t>=N&&!sumClosed;if(show===sumShown)return;sumShown=show;const el=$('sum');el.style.display=show?'flex':'none';if(!show)return;
  const a=S.map(s=>s.actual),m=a.reduce((x,y)=>x+y,0)/N,sd=N>1?Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/(N-1)):0;
- const on=S.filter(s=>s.on_target).length,dr=S.reduce((x,s)=>x+s.drift_pct,0)/N,rs=S.filter(s=>s.respray).length;
- el.innerHTML='<div><h2>Pass complete</h2><table><tr><td>Sections on target</td><td>'+on+' / '+N+'</td></tr><tr><td>Coverage, mean &plusmn; sd</td><td>'+m.toFixed(1)+' &plusmn; '+sd.toFixed(1)+' %</td></tr><tr><td>Mean drift</td><td>'+dr.toFixed(1)+' %</td></tr><tr><td>Sections to re-spray</td><td>'+rs+'</td></tr></table><button id="rp" class="on">Replay</button> <button id="rv">Review run</button></div>';
+ const on=S.filter(s=>s.on_target).length,dr=S.reduce((x,s)=>x+s.drift_pct,0)/N,rs=S.filter(s=>s.respray).length,adv=S.filter(s=>s.advice.length).length;
+ el.innerHTML='<div><h2>Pass complete</h2><table><tr><td>Sections on target</td><td>'+on+' / '+N+'</td></tr><tr><td>Coverage, mean &plusmn; sd</td><td>'+m.toFixed(1)+' &plusmn; '+sd.toFixed(1)+' %</td></tr><tr><td>Mean drift</td><td>'+dr.toFixed(1)+' %</td></tr><tr><td>Sections to re-spray</td><td>'+rs+'</td></tr><tr><td>Sections with a recommendation</td><td>'+adv+'</td></tr></table><button id="rp" class="on">Replay</button> <button id="rv">Review run</button></div>';
  $('rp').onclick=()=>{t=0;playing=true;sync()};
  $('rv').onclick=()=>{sumClosed=true}}
 
 function frameLoop(ts){
  if(last===null)last=ts;const dt=Math.min(1,(ts-last)/1000);last=ts;
  if(playing&&t<N){t=Math.min(N,t+dt*speed/BASE);if(t>=N)playing=false;sync()}
- draw();readout();summary();requestAnimationFrame(frameLoop)}
+ draw();readout();kinfo();summary();requestAnimationFrame(frameLoop)}
 
 // ---------- interaction
 function pick(e){
@@ -298,8 +361,8 @@ def embed_html(html: str, height: int) -> None:
         components.html(html, height=int(height), scrolling=False)
 
 
-def render_field_animation(res, c_req: float, height: int = 900) -> None:
+def render_field_animation(res, c_req: float, height: int = 900, cards: bool = True) -> None:
     """Render the animated field run (runs entirely in the browser, no Streamlit reruns)."""
-    payload = field_animation_payload(res, c_req)
+    payload = field_animation_payload(res, c_req, cards=cards)
     data = json.dumps(payload).replace("</", "<\\/")
     embed_html(_HTML.replace("__PAYLOAD__", data), height)

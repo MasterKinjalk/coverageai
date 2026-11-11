@@ -65,8 +65,6 @@ SCHEMA = "hybrid/1"
 # Physics-base outputs, in this column order, as a (n, 6) matrix.
 PHYS_KEYS = ("coverage_pct", "coverage_lo", "coverage_hi", "deposition_ul_cm2", "drift_frac",
              "displacement_mm")
-PHYS_FEATURE_NAMES = ("p_cov", "p_cov_lo", "p_cov_hi", "p_band", "p_logit_cov", "p_retention",
-                      "p_drift", "p_disp")
 
 # Deliberate physics errors (multiplicative factors on the true simulator parameters):
 # evaporation coefficient +-25-30 %, drift threshold +-25 %, WSP spread factor +-10 %,
@@ -82,7 +80,6 @@ MISSPEC_PRESETS: dict[str, dict[str, float]] = {
     "pessimistic": {"evaporation_lambda_scale": 0.75, "drift_threshold_scale": 1.25,
                     "spread_factor_scale": 0.90, "vmd_scale": 1.20, "vmd_power": 1.0},
 }
-DEFAULT_MISSPEC = "optimistic"
 _MISSPEC_KEYS = ("evaporation_lambda_scale", "drift_threshold_scale", "spread_factor_scale",
                  "vmd_scale", "vmd_power")
 

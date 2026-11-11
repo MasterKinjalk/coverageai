@@ -1,7 +1,12 @@
 """Payload builder for the animated "Field run" view (pure Python, no Streamlit).
 
 Turns a ``PassResult`` into a JSON-serializable dict with plain-English labels that the
-canvas animation in ``app/field_run_view.py`` consumes.
+canvas animation in ``app/field_run_view.py`` consumes. Everything the animation shows for a
+section travels in this one payload, so the picture, the card, the numbers and the advice
+always belong to the same section: the loop numbers (``app_logic.loop_numbers``, the same
+function the charts under the animation use), the card thumbnail and reader overlay
+(``PassResult.cards``), what the controller changed since the previous section
+(``app_logic.setting_changes``) and the operator recommendation (``app_logic.recommendations``).
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ MISMATCH_NAMES = {"none": "None", "low": "Low", "med": "Medium", "high": "High"}
 DROPLET_NAMES = {"VF": "Very fine", "F": "Fine", "M": "Medium", "C": "Coarse",
                  "VC": "Very coarse", "XC": "Extremely coarse", "UC": "Ultra coarse"}
 CLASS_LABELS = {"acceptable": "Good", "marginal": "Borderline", "critical": "Poor"}
+OVERLAY_NAMES = {"reader": "Stained area found by the card reader", "truth": "True stained area"}
 
 
 def _f(v: Any, nd: int = 2) -> float:
@@ -38,8 +44,28 @@ def class_label(cls: str) -> str:
     return CLASS_LABELS.get(cls, "Poor")
 
 
-def field_animation_payload(res, c_req: float) -> dict:
+def nozzle_note(res) -> str:
+    """One line on how the nozzle was chosen for this run (``PassResult.meta["nozzle"]``)."""
+    nz = res.meta.get("nozzle", {})
+    mode = nz.get("mode", "free")
+    if mode == "best_fixed":
+        return "one fixed setting"
+    if mode == "free":
+        return "may change every section"
+    name = f"{nz.get('family', '?')} {nz.get('size', '?')}"
+    return f"{name} for the whole field" + (" (picked by the model)" if mode == "auto" else "")
+
+
+def field_animation_payload(res, c_req: float, cards: bool = True, advice: bool = True) -> dict:
+    """``cards=False`` leaves the card images out (smaller payload); ``advice=False`` skips the
+    recommendations (they need one extra batched model call per run, cached on ``res``)."""
     layout = al.lap_layout(res.conds)
+    thumbs = res.cards if cards and res.cards and len(res.cards) == len(res.logs) else None
+    recs = al.recommendations(res) if advice else None
+    overlay = None
+    if thumbs:
+        overlay = "reader" if all("reader" in c for c in thumbs) else (
+            "truth" if all("truth" in c for c in thumbs) else None)
     sections = []
     for k, lg in enumerate(res.logs):
         row, col = layout[k]
@@ -47,28 +73,34 @@ def field_animation_payload(res, c_req: float) -> dict:
         cls = lg.meas.coverage_class
         direction = 1 if row % 2 == 0 else -1
         rel = al.wind_arrow_deg(x)
+        n = al.loop_numbers(lg)
+        rec = recs[k] if recs else None
         sections.append({
             "k": k, "number": k + 1, "row": int(row), "col": int(col), "dir": direction,
             "wind_speed_ms": _f(x.wind_speed_ms), "wind_rel_deg": _f(rel, 1),
             "wind_screen_deg": _f(rel + (180.0 if direction < 0 else 0.0), 1),
             "temp_c": _f(x.temp_c, 1), "rh_pct": _f(x.rh_pct, 0),
-            "nozzle": (f"{u.family} {u.size} at {u.pressure_psi:g} psi"
-                       + (f", {u.travel_speed_kmh:g} km/h" if u.travel_speed_kmh is not None else "")
-                       + (f", boom {u.boom_height_m:.2f} m" if u.boom_height_m is not None else "")),
+            "nozzle": al.setting_text(u),
             "droplet": DROPLET_NAMES.get(d.droplet_class, str(d.droplet_class)),
             "rate_gpa": _f(d.app_rate_gpa),
             "vmd_um": _f(d.vmd_um, 0), "crosswind_ms": _f(abs(d.u_cross_ms)),
-            "feedback_pp": _f(lg.bias), "error_pp": _f(lg.outcome.coverage_pct - lg.corrected_pred_cov),
-            "predicted": _f(lg.pred.coverage_pct, 1),
-            "after_feedback": _f(lg.corrected_pred_cov, 1),
-            "card": _f(lg.meas.coverage_pct, 1),
-            "actual": _f(lg.outcome.coverage_pct, 1),
+            "feedback_pp": _f(n["feedback_pp"]), "error_pp": _f(n["error_pp"]),
+            "predicted": _f(n["predicted"], 1),
+            "after_feedback": _f(n["after_feedback"], 1),
+            "card": _f(n["card"], 1),
+            "actual": _f(n["actual"], 1),
             "label": class_label(cls),
             "color": al.CLASS_COLORS.get(cls, al.CLASS_COLORS["critical"]),
             "drift_pct": _f(lg.outcome.drift_frac * 100.0, 2),
             "respray": bool(lg.flagged_retreat),
             "no_nozzle": bool(lg.selector_infeasible),
             "on_target": bool(lg.outcome.coverage_pct >= c_req),
+            # what the controller changed since the previous section, and what to do if poor
+            "changed": al.setting_changes(res.logs[k - 1], lg) if k else [],
+            "advice": rec.lines() if rec is not None and rec.status != "ok" else [],
+            "advice_status": rec.status if rec is not None else "",
+            "img": thumbs[k]["img"] if thumbs else "",
+            "overlay": thumbs[k].get(overlay, "") if thumbs and overlay else "",
         })
     cc = spec()["coverage_classes"]
     return {
@@ -76,6 +108,10 @@ def field_animation_payload(res, c_req: float) -> dict:
         "strategy": STRATEGY_NAMES.get(res.policy, str(res.policy)),
         "surprises": MISMATCH_NAMES.get(res.mismatch, str(res.mismatch)),
         "target": _f(c_req, 1),
+        "nozzle_note": nozzle_note(res),
+        "has_cards": bool(thumbs),
+        "overlay_name": OVERLAY_NAMES.get(overlay, ""),
+        "card_read": bool(res.used_vision),      # False: the card is shown but nothing read it
         "n": len(sections),
         "rows": (max((s["row"] for s in sections), default=-1) + 1),
         "cols": (max((s["col"] for s in sections), default=-1) + 1),

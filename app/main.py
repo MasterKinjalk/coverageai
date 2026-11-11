@@ -3,11 +3,16 @@
 Closed-loop simulated pass: scenario -> selector -> simulator (hidden mismatch) -> WSP card
 -> vision -> bias feedback.  All numbers come from the physics-informed simulator, so this
 is simulation-based evidence, not field validation.
+
+Page structure (Field run tab): one run (``app_logic.PassResult`` in ``st.session_state``)
+feeds the animated replay, the "What the model decided" tables (operator recommendations,
+changes along the field, changes since the previous run, export) and the section inspector.
+The replay plays in the browser; the inspector below it is a separate, static look at one
+section chosen with the "Section to inspect" slider.
 """
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -23,6 +28,7 @@ from spray_lab_view import render_spray_lab
 from coverageai import app_logic as al
 from coverageai import catalog, scenarios
 from coverageai.config import spec
+from coverageai.field_anim import nozzle_note
 from coverageai.contracts import (Conditions, Setting, coverage_class, effective_boom_height_m,
                                    effective_speed_kmh)
 
@@ -196,14 +202,12 @@ def render_learning_table(passes: list[dict]) -> None:
 
 SS = st.session_state
 SS.setdefault("result", None)
-SS.setdefault("cursor", 0)
-SS.setdefault("playing", False)
+SS.setdefault("previous", None)    # the run before this one, for "changes since the previous run"
+SS.setdefault("section", 1)        # section shown by the inspector (1-based, slider key)
 SS.setdefault("run_id", 0)
 SS.setdefault("card_cache", {})
 SS.setdefault("compare", None)
 SS.setdefault("want_run", False)
-if SS.pop("advance", False):       # autoplay: move on before the cursor slider exists
-    SS["cursor"] += 1
 
 with st.sidebar:
     st.markdown("### CoverageVision AI")
@@ -250,6 +254,22 @@ with st.sidebar:
                                       "plus simulated sensor error. Classic image analysis and the "
                                       "neural network look at a picture of the card, like a real camera "
                                       "would (slower).")
+    nozzle_opts = ["auto", "free"] + [f"{f}-{z}" for f in catalog.families() for z in catalog.sizes(f)]
+    nozzle_choice = st.selectbox("Nozzle on the boom", nozzle_opts, format_func=L.nozzle_choice,
+                                 index=_qp_index("nozzle", nozzle_opts, "auto"),
+                                 help="A sprayer carries one nozzle for a whole field, so by default "
+                                      "the model picks the single best nozzle for this field and then "
+                                      "only adjusts pressure (and speed or boom height if allowed "
+                                      "below). You can also name the nozzle that is fitted, or let "
+                                      "the nozzle change at every section (not possible on a real "
+                                      "boom; kept for experiments).")
+    show_cards = st.checkbox("Show the paper cards in the replay",
+                             value=st.query_params.get("cards", "1") != "0",
+                             help="Shows each section's water-sensitive paper card as the replay "
+                                  "reaches it. With a reader that does not look at pictures (perfect "
+                                  "or noisy reading) the cards are drawn after the run, which takes a "
+                                  "few seconds.")
+
     def keep_advanced_open() -> None:
         SS["adv_open"] = True        # an expander otherwise folds back up on the rerun a click causes
 
@@ -285,41 +305,30 @@ with st.sidebar:
         st.caption("Falling back to Physics model (ideal) with Perfect reading.")
         model_name, verifier_name = "oracle_nominal", "perfect"
     st.divider()
+    lockable = modules is not None and hasattr(modules.selector, "best_nozzle")
+    if not lockable:
+        nozzle_choice = "free"       # the simple test model has its own toy nozzle list
     cfg = (preset, int(seed), mismatch, policy, float(c_req), float(lam), model_name, verifier_name,
-           bool(speed_ctl), bool(boom_ctl), forecast_name)
-    ctl_opts = dict(speed_control=bool(speed_ctl), boom_control=bool(boom_ctl), forecaster=forecast_name)
+           bool(speed_ctl), bool(boom_ctl), forecast_name, nozzle_choice, bool(show_cards))
+    ctl_opts = dict(speed_control=bool(speed_ctl), boom_control=bool(boom_ctl), forecaster=forecast_name,
+                    fixed_nozzle=nozzle_choice)
+    inputs = {"Weather scenario": L.preset(preset), "Random seed": str(int(seed)),
+              "Real-world surprises": L.mismatch(mismatch), "Control strategy": L.policy(policy),
+              "Target coverage (%)": f"{c_req:g}", "Priority (0 water, 1 drift)": f"{lam:g}",
+              "Coverage predictor": L.model(model_name), "Card reader": L.verifier(verifier_name),
+              "Nozzle on the boom": L.nozzle_choice(nozzle_choice),
+              "Controller changes travel speed": "Yes" if speed_ctl else "No",
+              "Controller changes boom height": "Yes" if boom_ctl else "No",
+              "Wind forecast": L.forecast(forecast_name)}
 
     def run_pass_cb() -> None:
-        # Callbacks run before widgets exist, so the "cursor" slider key may be reset here
+        # Callbacks run before widgets exist, so the "section" slider key may be reset here
         # (not later in the script, which raises StreamlitWidgetAlreadyInstantiatedError).
         SS["want_run"] = True
-        SS["cursor"] = 0
-        SS["playing"] = False
-        SS.pop("advance", None)      # drop a pending autoplay step
-
-    def step(d: int) -> None:
-        r = SS["result"]
-        if r is not None:
-            SS["cursor"] = int(np.clip(SS["cursor"] + d, 0, r.n - 1))
-
-    def toggle_play() -> None:
-        r = SS["result"]
-        if r is None:
-            return
-        if SS["cursor"] >= r.n - 1:
-            SS["cursor"] = 0
-        SS["playing"] = not SS["playing"]
+        SS["section"] = 1
 
     st.button("Run pass", type="primary", help="Simulate driving the whole field with these settings.",
               on_click=run_pass_cb, width="stretch")
-    c1, c2, c3 = st.columns(3)
-    c1.button("Back", on_click=step, args=(-1,), width="stretch")
-    c2.button("Step", on_click=step, args=(1,), width="stretch")
-    c3.button("Pause" if SS["playing"] else "Play all", on_click=toggle_play, width="stretch")
-    if SS["result"] is not None:
-        st.slider("Field section", 0, SS["result"].n - 1, key="cursor", format="%d",
-                  help="Which section of the field to look at (first section = 0). Later sections "
-                       "stay hidden until the run reaches them.")
     st.caption("Everything here comes from a physics-based simulation, not real field data. Wind "
                "direction is the direction the air moves toward.")
 
@@ -328,13 +337,99 @@ if SS["result"] is None or SS["want_run"]:
     conds0 = cached_conditions(preset, int(seed))
     with st.spinner("Running pass (selector, simulator, card, feedback) ..."):
         new = al.run_pass_wrapper(modules, conds0, policy, int(seed), mismatch, float(c_req), float(lam),
-                                  **ctl_opts)
+                                  capture_cards=bool(show_cards), **ctl_opts)
+    if show_cards and new.cards is None:
+        with st.spinner("Drawing the paper cards ..."):
+            al.ensure_cards(new)
     new.meta["cfg"] = cfg
-    SS.update(result=new, run_id=SS["run_id"] + 1, playing=False, card_cache={})
+    new.meta["inputs"] = inputs
+    old = SS["result"]
+    if old is not None:
+        old.cards = None             # only the newest run keeps its card pictures
+    SS.update(result=new, previous=old, run_id=SS["run_id"] + 1, card_cache={})
     st.rerun()
 res: al.PassResult = SS["result"]
 stale = res.meta.get("cfg") != cfg
-cursor = int(np.clip(SS["cursor"], 0, res.n - 1))
+cursor = int(np.clip(SS["section"], 1, res.n)) - 1
+
+
+def render_decisions(res: al.PassResult, prev: al.PassResult | None) -> None:
+    """What the predictive model put out for this run, in four views."""
+    st.subheader("What the model decided")
+    recs = al.recommendation_frame(res)
+    dec = al.decision_frame(res)
+    n_chg = int((dec["changed"] != "").sum())
+    t_rec, t_chg, t_prev, t_all = st.tabs([
+        f"Operator recommendations ({len(recs)})", f"Changes along the field ({n_chg})",
+        "Changes since the previous run", "All model outputs"])
+    with t_rec:
+        st.caption("For every section whose card reads below the target: which of pressure, travel "
+                   "speed and boom height to change, and by how much, with the nozzle that is fitted. "
+                   "The model predicts the effect of each change; the card gives the starting point.")
+        if len(recs):
+            st.dataframe(recs.style.format({"Card reading (%)": "{:.1f}", "Short of target (pp)": "{:.1f}"}),
+                         hide_index=True, width="stretch")
+        else:
+            st.success("Every card read at or above the target. No change is recommended.")
+    with t_chg:
+        st.caption("Every section where the controller chose a different setting than in the section "
+                   "before it. Nozzle: " + nozzle_note(res) + ".")
+        chg = dec[dec["changed"] != ""]
+        if len(chg):
+            st.dataframe(chg[["section", "changed", "nozzle", "pressure_psi", "speed_kmh", "boom_height_m",
+                              "wind_ms", "predicted_cov", "after_feedback_cov", "card_cov"]]
+                         .rename(columns=L.DECISION_COLS)
+                         .style.format({L.DECISION_COLS[c]: f for c, f in L.DECISION_FMT.items()
+                                        if c in ("pressure_psi", "speed_kmh", "boom_height_m", "wind_ms",
+                                                 "predicted_cov", "after_feedback_cov", "card_cov")}),
+                         hide_index=True, width="stretch")
+        else:
+            st.info("The controller kept the same setting for the whole field.")
+    with t_prev:
+        if prev is None:
+            st.info("Run a second pass (change a sidebar setting, then press **Run pass**) to see what "
+                    "the model changed between the two runs.")
+        else:
+            d = al.run_changes(prev, res)
+            a, b = st.columns([2, 3], gap="medium")
+            with a:
+                st.markdown("**Inputs you changed**")
+                if len(d["inputs"]):
+                    st.dataframe(d["inputs"], hide_index=True, width="stretch")
+                else:
+                    st.caption("None: the same inputs were run again.")
+            with b:
+                st.markdown("**Result of the run**")
+                st.dataframe(d["results"].style.format({"Previous run": "{:.2f}", "This run": "{:.2f}",
+                                                        "Change": "{:+.2f}"}),
+                             hide_index=True, width="stretch")
+            if not d["comparable"]:
+                st.caption("The two runs have a different number of sections, so they are not compared "
+                           "section by section.")
+            elif d["n_changed"]:
+                st.markdown(f"**Settings the model changed: {d['n_changed']} of {d['n']} sections**")
+                st.dataframe(d["sections"].style.format({"Predicted coverage change (pp)": "{:+.1f}",
+                                                         "Actual coverage change (pp)": "{:+.1f}"}),
+                             hide_index=True, width="stretch")
+            else:
+                st.caption("The model chose the same setting in every section of both runs.")
+    with t_all:
+        st.caption("One row per section: the setting chosen, the model's coverage prediction with its "
+                   "80% interval, the feedback correction, the card reading, the actual coverage and "
+                   "the predicted and actual drift.")
+        st.dataframe(dec.assign(droplet_class=dec["droplet_class"].map(L.droplet))
+                     .rename(columns=L.DECISION_COLS).style.format(
+            {L.DECISION_COLS[c]: f for c, f in L.DECISION_FMT.items()}), hide_index=True, width="stretch",
+            height=320)
+        d1, d2 = st.columns(2)
+        d1.download_button("Download this table (CSV)", dec.to_csv(index=False).encode("utf8"),
+                           file_name=f"model_outputs_{res.policy}_seed{res.seed}.csv", mime="text/csv",
+                           width="stretch")
+        d2.download_button("Download the full run log (CSV)",
+                           al.logs_frame(res).to_csv(index=False).encode("utf8"),
+                           file_name=f"run_log_{res.policy}_seed{res.seed}.csv", mime="text/csv",
+                           width="stretch")
+
 
 # ------------------------------------------------------------------ tabs
 
@@ -355,22 +450,14 @@ with tab_live:
     st.markdown(loop_overview_html(), unsafe_allow_html=True)
     st.subheader("Replay of the run")
     st.caption("Each field section goes once around the loop above. Press Play to watch the run "
-               "section by section; hover or click a section for its values.")
-    render_field_animation(res, res.c_req)
-    if res.policy == "fast_slow" and res.meta.get("passes"):
-        render_learning_table(res.meta["passes"])
-    st.divider()
-    st.subheader("Section details")
-    st.caption("Step through the run one section at a time with the sidebar controls.")
-    k = cursor
-    lg = res.logs[k]
-    x, d = lg.x, lg.derived
-    st.markdown(loop_steps_html(res, k), unsafe_allow_html=True)
+               "section by section: the map, the paper card, the coverage and the feedback all move "
+               "together. Hover or click a section for its values; the 4x speed plays the whole field "
+               "in about ten seconds.")
+    render_field_animation(res, res.c_req, cards=bool(show_cards))
     rc = res.c_req
     cc = spec()["coverage_classes"]
-
-    # ---- 1. header KPIs
-    kp = al.compute_kpis(res.logs, rc, upto=k)
+    kp = al.compute_kpis(res.logs, rc)
+    n_adv = len(al.recommendation_frame(res))
     cols = st.columns(6)
     kpi(cols[0], "Sections meeting target", f"{kp['n_met']} / {kp['n']}",
         f"{100 * kp['frac_met']:.0f}% (actual coverage)")
@@ -378,10 +465,21 @@ with tab_live:
     kpi(cols[2], "Average spray volume", f"{kp['mean_gpa']:.1f} gal/acre", f"{kp['mean_gpa'] * 9.354:.0f} L/ha")
     kpi(cols[3], "Average drift", f"{100 * kp['mean_drift']:.1f}%", "of sprayed volume")
     kpi(cols[4], "Needs re-spraying", f"{kp['n_retreat']}", "sections with a poor card")
-    kpi(cols[5], "Field section", f"{k + 1} / {res.n}",
-        f"{L.policy(res.policy)}; surprises: {L.mismatch(res.mismatch).lower()}"
-        + (f", {res.elapsed_s:.1f}s" if k == 0 else ""))
-    st.write("")
+    kpi(cols[5], "Recommendations", f"{n_adv}", "sections with a card below target")
+    st.caption(f"Whole run: {L.policy(res.policy)}; surprises: {L.mismatch(res.mismatch).lower()}; "
+               f"nozzle: {nozzle_note(res)}. Computed in {res.elapsed_s:.1f} s.")
+    render_decisions(res, SS["previous"])
+    if res.policy == "fast_slow" and res.meta.get("passes"):
+        render_learning_table(res.meta["passes"])
+    st.divider()
+    st.subheader("Section inspector")
+    st.slider("Section to inspect", 1, res.n, key="section",
+              help="A closer, static look at one section of the run above: the loop step by step, the "
+                   "full-size card and the settings that were considered.")
+    k = cursor
+    lg = res.logs[k]
+    x, d = lg.x, lg.derived
+    st.markdown(loop_steps_html(res, k), unsafe_allow_html=True)
 
     # ---- 2 + 3. segment panel and card
     left, right = st.columns([5, 6], gap="medium")
@@ -421,6 +519,13 @@ with tab_live:
             unsafe_allow_html=True)
         for line in al.explain_choice(res, k):
             st.markdown(f"- {L.explain(line)}")
+        if k:
+            chg = al.setting_changes(res.logs[k - 1], lg)
+            st.markdown("- Changed since the previous section: "
+                        + ("; ".join(chg) if chg else "nothing") + ".")
+        rec = al.recommendations(res)[k]
+        if rec.status != "ok":
+            st.warning("**Recommendation.** " + "; ".join(rec.lines()))
         top = al.top_candidates_frame(info)
         if len(top):
             top = top.assign(Setting=top["Setting"].map(L.parse_setting_text)).rename(columns=L.TOP_COLS)
@@ -484,28 +589,28 @@ with tab_live:
                        "sensor error and no picture is read during the run. The card and outline shown "
                        "here are for illustration only (read afterwards with classic image analysis).")
 
-    # ---- 4. time series
-    st.subheader("Coverage along the field")
-    ts = al.timeseries_frame(res.logs, upto=k)
+    # ---- 4. the feedback loop over the whole run (the numbers of panels B and D above)
+    st.subheader("Feedback loop over the run")
+    ts = al.timeseries_frame(res.logs)
     t1, t2 = st.columns([3, 2], gap="medium")
     with t1:
-        st.altair_chart(charts.coverage_timeseries(ts, rc, cc["marginal_min"], res.n), width="stretch")
-        st.caption("Dashed green line: target coverage. Shaded bands: Poor / Borderline / Good. "
-                   "Prediction after feedback = model prediction + feedback correction.")
+        st.altair_chart(charts.coverage_timeseries(ts, rc, cc["marginal_min"], res.n, mark=k + 1),
+                        width="stretch")
+        st.caption("Coverage in every section (panel B of the replay). Dashed green line: target "
+                   "coverage. Shaded bands: Poor / Borderline / Good. Prediction after feedback = model "
+                   "prediction + feedback correction. Vertical line: the inspected section.")
     with t2:
-        st.altair_chart(charts.bias_chart(ts, res.n), width="stretch")
-        st.caption("Feedback correction applied to the model (line) and the error still left after "
-                   "correcting (bars), in percentage points.")
-
-    # ---- 5. field strip
-    st.subheader("Field map")
-    basis = st.radio("Tile color shows", ["measured", "true"], horizontal=True,
-                     format_func={"measured": "Card reading", "true": "Actual coverage"}.get,
-                     help="Card reading = what the paper card says; actual coverage = the simulated truth.")
-    fs = al.field_strip_data(res.conds, res.logs, k, basis=basis)
-    st.altair_chart(charts.field_strip_chart(fs), width="stretch")
-    st.caption("Field sections in driving order (passes alternate direction). White ring: current "
-               "section. ✖: needs re-spraying (poor coverage).")
+        st.altair_chart(charts.bias_chart(ts, res.n, mark=k + 1), width="stretch")
+        st.caption("The same numbers as panel D of the replay: the feedback correction applied to each "
+                   "section's prediction (line) and the prediction error left after it, actual minus "
+                   "prediction after feedback (bars), in percentage points.")
+    with st.expander("Feedback-loop numbers for every section"):
+        st.dataframe(ts[list(L.LOOP_COLS)].rename(columns=L.LOOP_COLS).style.format(
+            {c: "{:+.2f}" if "(pp)" in c else "{:.1f}" for c in L.LOOP_COLS.values() if c != "Section"}),
+            hide_index=True, width="stretch")
+        st.caption("Error seen by the controller = card reading minus prediction after feedback; it is "
+                   "what the next correction is computed from. Correction after this card applies to "
+                   "the following sections with similar wind and droplet size.")
 
 # ================================================================= comparison
 with tab_cmp:
@@ -620,12 +725,3 @@ with tab_noz:
         u2.metric("Spray width at the card", f"{100 * pat['fan_width_m']:.0f} cm")
         u3.metric("Peak spray intensity", f"{pat['peak']:.2f}")
         st.caption("Illustration of how neighbouring nozzles (20 in apart) overlap; not simulator output.")
-
-# ------------------------------------------------------------------ autoplay
-if SS["playing"]:
-    if SS["cursor"] < res.n - 1:
-        time.sleep(0.2)
-        SS["advance"] = True
-    else:
-        SS["playing"] = False
-    st.rerun()

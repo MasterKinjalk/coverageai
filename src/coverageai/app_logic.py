@@ -4,22 +4,27 @@ wrapper, KPI computation, field-strip layout, chart frames, nozzle-explorer curv
 Everything here is plain Python/pandas so it can be unit-tested without Streamlit
 (tests/test_app_logic.py). ``app/main.py`` only handles widgets and layout.
 
-Module construction. ``build_modules_adapter`` first tries the integration module
-(``coverageai.integration.build_modules``). If that is not importable it builds a
-working stack from the real simulator, selector and renderer, with the nominal
-simulator (no hidden mismatch, mean spread factor) standing in for the learned model.
-Swap-in therefore needs no change in the UI.
+Module construction is ``coverageai.integration.build_modules`` (``build_modules_adapter``
+is the app's name for it).
+
+One run, one record. ``run_pass_wrapper`` returns a ``PassResult`` that carries everything the
+UI shows: the segment logs, the selector's candidate tables, card thumbnails captured while the
+loop read them (``cards``), the nozzle held for the field (``meta["nozzle"]``), and, derived on
+demand from the logs, the operator recommendations (``recommendations``), the per-section
+decision table (``decision_frame``) and the feedback-loop numbers (``loop_numbers``) that both
+the animation and the charts below it read.
 
 Honesty note shown in the app: the plant is the simulator, so everything on screen is
 simulation-based evidence, not field validation.
 """
 from __future__ import annotations
 
+import base64
 import copy
 import dataclasses
-import importlib
-import inspect
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
@@ -28,10 +33,10 @@ import pandas as pd
 
 from coverageai import scenarios
 from coverageai.config import px_per_mm, spec
-from coverageai.contracts import (Conditions, Derived, Outcome, Prediction, Setting,
+from coverageai.contracts import (Conditions, Outcome, Prediction, Setting,
                                   coverage_class)
-from coverageai.loop import (FORECAST_POLICIES, Modules, POLICIES, default_mock_modules, run_pass,
-                             run_passes_slow, segment_rng, summarize)
+from coverageai.loop import (FORECAST_POLICIES, Modules, POLICIES, logs_to_frame, run_pass,
+                             run_passes_slow, segment_rng, summarize, verified_records)
 
 MISMATCH_LEVELS = ("none", "low", "med", "high")
 APP_POLICIES = ("open", "fast", "fast_slow", "oracle", "oracle_card", "best_fixed")
@@ -45,7 +50,6 @@ VERIFIER_CHOICES = ("perfect", "noisy", "b0", "b1")
 SPEED_OPTIONS_KMH = tuple(float(v) for v in range(8, 31, 2))
 BOOM_HEIGHT_OPTIONS_M = (0.30, 0.40, 0.50, 0.60, 0.75)
 FORECAST_CHOICES = ("off", "last", "ewma", "ar1", "ar1+gust")
-CLASS_ORDER = ("acceptable", "marginal", "critical")
 CLASS_COLORS = {"acceptable": "#3ddc97", "marginal": "#f5b942", "critical": "#ef5b5b",
                 "pending": "#2b3340"}
 
@@ -79,48 +83,9 @@ class NominalSimModel:
         pass
 
 
-def _find_verifier_class(module_name: str):
-    mod = importlib.import_module(module_name)
-    for _, obj in inspect.getmembers(mod, inspect.isclass):
-        if obj.__module__ == mod.__name__ and hasattr(obj, "measure"):
-            return obj
-    raise ImportError(f"no verifier class with measure() in {module_name}")
-
-
-def _fallback_modules(model: str, verifier: str) -> Modules:
-    """Real simulator/selector/renderer with the nominal model; mocks only if asked."""
-    if model == "mock":
-        m = default_mock_modules()
-        if verifier != "perfect":
-            raise ValueError("mock model supports only the perfect verifier")
-        return dataclasses.replace(m, verifier=None)
-    from coverageai import catalog
-    from coverageai.selector import ConstrainedSelector
-    from coverageai.simulator import SpraySimulator
-    from coverageai.vision.render import WSPRenderer
-    ver = None
-    if verifier == "b0":
-        ver = _find_verifier_class("coverageai.vision.classical")()
-    elif verifier == "b1":
-        ver = _find_verifier_class("coverageai.vision.unet")()
-    elif verifier == "noisy":
-        raise ValueError("verifier 'noisy' needs integration.build_modules")
-    elif verifier != "perfect":
-        raise ValueError(f"unknown verifier {verifier!r}")
-    if model == "spray":
-        from coverageai.model.predictor import SprayModel
-        mdl = SprayModel.load()      # models/spray_model_v1.joblib (FileNotFoundError if untrained)
-    else:
-        mdl = NominalSimModel(derive_fn=catalog.derive)
-    return Modules(SpraySimulator(), mdl, ConstrainedSelector(), ver, WSPRenderer(), catalog.derive)
-
-
 def build_modules_adapter(model: str = "oracle_nominal", verifier: str = "perfect") -> Modules:
-    """integration.build_modules if present, else the fallback stack above."""
-    try:
-        from coverageai.integration import build_modules  # type: ignore
-    except ImportError:
-        return _fallback_modules(model, verifier)
+    """The app's module stack (simulator, model, selector, verifier, renderer)."""
+    from coverageai.integration import build_modules
     return build_modules(model=model, verifier=verifier)
 
 
@@ -142,6 +107,94 @@ class RecordingSelector:
         return getattr(self.inner, name)
 
 
+# ------------------------------------------------------------ card thumbnails
+
+CARD_THUMB_W = 340                  # px wide JPEG per card in the replay payload
+READER_COLOR = (255, 64, 64)        # stained area found by the card reader
+TRUTH_COLOR = (0, 255, 200)         # true stained area
+
+
+def card_thumb(image: np.ndarray, mask: np.ndarray | None = None, color=READER_COLOR,
+               width: int = CARD_THUMB_W, quality: int = 60) -> str:
+    """Base64 JPEG of a card photo downscaled to ``width``, with ``mask`` blended over it."""
+    import cv2
+    blank = np.zeros(image.shape[:2], bool) if mask is None else np.asarray(mask, bool)
+    small = overlay_mask(image, blank, color=color, max_width=width)
+    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(small, cv2.COLOR_RGB2BGR),
+                           [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+    return base64.b64encode(buf.tobytes()).decode("ascii") if ok else ""
+
+
+class _Proxy:
+    """Attribute pass-through that is safe to copy (no recursion before ``inner`` exists)."""
+
+    def __getattr__(self, name):
+        if name == "inner" or name.startswith("__"):
+            raise AttributeError(name)
+        return getattr(self.inner, name)
+
+
+class RecordingRenderer(_Proxy):
+    """Renderer proxy that keeps a thumbnail of every card the loop renders, in segment order,
+    so the UI can replay the cards without rendering them a second time. ``truth`` also stores
+    the card with its true stain mask (used when the reader produces no mask)."""
+
+    def __init__(self, inner, cards: list[dict], truth: bool = False):
+        self.inner, self.cards, self.truth = inner, cards, truth
+
+    def render(self, outcome, rng, degrade: bool = True, **kw):
+        image, mask = self.inner.render(outcome, rng, degrade=degrade, **kw)
+        card = {"img": card_thumb(image)}
+        if self.truth:
+            card["truth"] = card_thumb(image, mask, TRUTH_COLOR)
+        self.cards.append(card)
+        return image, mask
+
+
+class RecordingVerifier(_Proxy):
+    """Verifier proxy that adds the reader's stain mask to the thumbnail of the card it has just
+    measured (one detection: ``measure_full``). The measurement itself is unchanged. Anything
+    else, including ``measure_outcome`` of the image-free reader, passes straight through."""
+
+    def __init__(self, inner, cards: list[dict]):
+        self.inner, self.cards = inner, cards
+
+    def measure(self, image, px_per_mm):
+        meas, mask, _roi = self.inner.measure_full(image, px_per_mm)
+        if self.cards:
+            self.cards[-1]["reader"] = card_thumb(image, mask, READER_COLOR)
+        return meas
+
+
+def render_cards(res: "PassResult", max_workers: int | None = None) -> list[dict]:
+    """Thumbnails for a run whose loop rendered no cards (perfect or simulated-sensor reader).
+    Replays the hidden state once, like ``replay_card``, then renders the cards in threads.
+    The cards are for viewing only: nothing in the run read them."""
+    m = res.modules
+    sim = copy.deepcopy(m.simulator)
+    if hasattr(sim, "begin_pass"):
+        sim.begin_pass(res.seed, res.mismatch)
+    outcomes = [sim.simulate(lg.x, lg.u, segment_rng(res.seed, k), res.mismatch,
+                             sample_droplets=True) for k, lg in enumerate(res.logs)]
+
+    def one(k: int) -> dict:
+        image, gt = copy.copy(m.renderer).render(outcomes[k], np.random.default_rng([res.seed, k, 1]))
+        return {"img": card_thumb(image), "truth": card_thumb(image, gt, TRUTH_COLOR)}
+
+    with ThreadPoolExecutor(max_workers or min(8, os.cpu_count() or 2)) as ex:
+        return list(ex.map(one, range(len(outcomes))))
+
+
+def ensure_cards(res: "PassResult") -> list[dict] | None:
+    """``res.cards``, rendering them now if the loop did not (None if this stack cannot)."""
+    if res.cards is None and res.modules.renderer is not None:
+        try:
+            res.cards = render_cards(res)
+        except (ValueError, AttributeError, TypeError):    # e.g. a plant without droplets
+            res.cards = None
+    return res.cards
+
+
 # ------------------------------------------------------------- pass runner
 
 @dataclass
@@ -160,6 +213,7 @@ class PassResult:
     elapsed_s: float = 0.0
     label: str = ""
     meta: dict = field(default_factory=dict)
+    cards: list[dict] | None = None      # one thumbnail dict per section (see RecordingRenderer)
 
     @property
     def n(self) -> int:
@@ -189,8 +243,10 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                      fixed_setting: Setting | None = None, render: bool | None = None,
                      pass_id: str | None = None, n_learn: int = N_LEARN_PASSES,
                      speed_control: bool = False, boom_control: bool = False,
-                     forecaster: str | None = None) -> PassResult:
-    """Run one pass and keep what the UI needs (selector records, timing).
+                     forecaster: str | None = None,
+                     fixed_nozzle: str | tuple[str, str] | None = None,
+                     capture_cards: bool = False) -> PassResult:
+    """Run one pass and keep what the UI needs (selector records, timing, card thumbnails).
 
     ``fast_slow``: runs ``n_learn`` earlier passes (seeds ``seed + 1009 i``, no card
     rendering) through ``loop.run_passes_slow`` so the slow loop learns a residual
@@ -209,12 +265,29 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     ``FORECAST_CHOICES``; "off"/None = none) turns on the short-horizon wind forecaster for the
     policies that support it (open, fast, fast_slow; ignored by the others). For fast_slow one
     forecaster object is shared by the learning passes and the displayed pass.
+
+    ``fixed_nozzle`` (decision D19; None or "free" = off, any nozzle per section): "auto" holds
+    the one nozzle ``selector.best_nozzle`` picks for these conditions with the pass's model and
+    ``lam``; a (family, size) pair or "FAMILY-SIZE" holds that nozzle. Only pressure (and speed /
+    boom height if those options are on) then varies along the field. Set on the selector for the
+    duration of the call; fast_slow learning passes use the same nozzle; best_fixed ignores it.
+    The choice is reported in ``meta["nozzle"]``.
+
+    ``capture_cards`` keeps a thumbnail of every card the loop renders and reads
+    (``PassResult.cards``; None if the loop read no images, see ``ensure_cards``). It wraps the
+    renderer and verifier in recording proxies for this call only and does not change any number.
     """
     if policy not in POLICIES:
         raise ValueError(f"unknown policy {policy!r}")
     sel = modules.selector
     rec = sel if isinstance(sel, RecordingSelector) else RecordingSelector(sel)
     mods = dataclasses.replace(modules, selector=rec)
+    cards: list[dict] = []
+    if capture_cards and mods.renderer is not None:
+        masks = hasattr(mods.verifier, "measure_full")
+        mods.renderer = RecordingRenderer(modules.renderer, cards, truth=not masks)
+        if masks:
+            mods.verifier = RecordingVerifier(modules.verifier, cards)
     if render is None:
         render = mods.verifier is not None
     # An image-free verifier (NoisyVerifier.measure_outcome) never reads rendered cards in the
@@ -235,6 +308,12 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
             if not hasattr(inner, attr):
                 raise ValueError(f"this selector does not support {what} control")
             opt_grids.append((attr, grid))
+    lock = _parse_nozzle(fixed_nozzle) if policy != "best_fixed" else None
+    if lock is not None:
+        if not hasattr(inner, "best_nozzle"):
+            raise ValueError("this selector does not support holding one nozzle")
+        if lock != "auto" and not any((u.family, u.size) == lock for u in inner.candidates):
+            raise ValueError(f"nozzle {lock[0]}-{lock[1]} is not in the catalog")
     saved_opts: dict[str, Any] = {}
     lam_set = False
     t0 = time.perf_counter()
@@ -247,6 +326,14 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
         for attr, grid in opt_grids:
             saved_opts[attr] = getattr(inner, attr)
             setattr(inner, attr, list(grid))
+        if lock is not None:
+            meta["nozzle"] = {"mode": "auto" if lock == "auto" else "fixed"}
+            if lock == "auto":      # after lam is set: the choice uses this pass's trade-off
+                lock, stats = inner.best_nozzle(list(conds), mods.model, float(c_req))
+                meta["nozzle"]["ranking"] = stats["nozzles"][:5]
+            meta["nozzle"].update(family=lock[0], size=lock[1])
+            saved_opts["nozzle_lock"] = inner.nozzle_lock
+            inner.nozzle_lock = lock
         if policy == "fast_slow":
             run_seed, passes = _learn_between_passes(mods, conds, int(seed), mismatch,
                                                      float(c_req), int(n_learn), forecaster=fc)
@@ -264,10 +351,29 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     if policy == "fast_slow":
         meta["passes"].append(_pass_summary(len(meta["passes"]) + 1, logs, float(c_req),
                                             mods.model, displayed=True))
+    meta.setdefault("nozzle", {"mode": "best_fixed" if policy == "best_fixed" else "free"})
+    # the recording proxies are for this call only: the result keeps the real renderer/verifier
+    mods = dataclasses.replace(mods, renderer=modules.renderer, verifier=modules.verifier)
     return PassResult(logs=logs, conds=list(conds), policy=policy, seed=run_seed,
                       mismatch=mismatch, c_req=float(c_req), lam=lam, modules=mods,
                       records=rec.records, fixed_setting=fixed_setting, used_vision=vision,
-                      elapsed_s=time.perf_counter() - t0, meta=meta)
+                      elapsed_s=time.perf_counter() - t0, meta=meta,
+                      cards=cards if len(cards) == len(logs) and cards else None)
+
+
+def _parse_nozzle(v) -> tuple[str, str] | str | None:
+    """None / "free" / False -> None, "auto" / True -> "auto", ("XR", "04") or "XR-04" -> pair."""
+    if v in (None, False, "", "free", "off"):
+        return None
+    if v is True or v == "auto":
+        return "auto"
+    if isinstance(v, str):
+        fam, sep, size = v.partition("-")
+        if not sep or not fam or not size:
+            raise ValueError(f"nozzle must be 'auto', 'free' or 'FAMILY-SIZE', got {v!r}")
+        return fam, size
+    fam, size = v
+    return str(fam), str(size)
 
 
 def _make_forecaster(name: str | None):
@@ -287,22 +393,6 @@ def _pass_summary(i: int, logs: Sequence, c_req: float, model, displayed: bool =
             "mean_error_pp": float(err.mean()),
             "slow_offset_pp": float(getattr(model, "global_corr", 0.0)),
             "displayed": displayed}
-
-
-def _verified_records(logs: Sequence) -> list[tuple[Conditions, Setting, Outcome]]:
-    """Slow-loop training records for ``logs``, built exactly like ``loop.run_passes_slow``:
-    measured coverage (and measured stains if available), other outcome fields from the
-    simulator, and the point-forecast wind (``extra["fc_wind_ms"]``) as the conditions when a
-    forecaster was on, else the nominal ``lg.x``."""
-    recs = []
-    for lg in logs:
-        o = lg.outcome
-        stains = lg.meas.stains_per_cm2 if lg.meas.stains_per_cm2 is not None else o.stains_per_cm2
-        x_rec = (lg.x if "fc_wind_ms" not in lg.extra
-                 else dataclasses.replace(lg.x, wind_speed_ms=lg.extra["fc_wind_ms"]))
-        recs.append((x_rec, lg.u, Outcome(lg.meas.coverage_pct, o.deposition_ul_cm2,
-                                          o.drift_frac, o.displacement_mm, stains, None)))
-    return recs
 
 
 def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int, mismatch: str,
@@ -325,7 +415,7 @@ def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int,
             passes[-1]["slow_offset_pp"] = float(by_pass[i][0].extra.get("slow_global_corr", 0.0))
         # run_passes_slow does not refit after its last pass: do it here
         last = by_pass[max(by_pass)]
-        corr.fit(_verified_records(last))
+        corr.fit(verified_records(last))
     mods.model = corr
     return seed + 1009 * n_learn, passes
 
@@ -414,18 +504,173 @@ def field_strip_data(conds: Sequence[Conditions], logs: Sequence, cursor: int,
 
 # ----------------------------------------------------------- series / tables
 
+def loop_numbers(lg) -> dict[str, float]:
+    """The feedback-loop numbers of one section. Single source for animation panels B and D
+    (``field_anim``) and for the charts and table under the animation, so they cannot disagree.
+
+    ``feedback_pp`` is the correction applied to this section's prediction, ``error_pp`` what was
+    left after it against the actual coverage (panel D), ``card_error_pp`` the same against the
+    card reading (what the controller sees and learns from), ``next_feedback_pp`` the correction
+    after this card."""
+    return {
+        "predicted": float(lg.pred.coverage_pct),
+        "feedback_pp": float(lg.bias),
+        "after_feedback": float(lg.corrected_pred_cov),
+        "card": float(lg.meas.coverage_pct),
+        "actual": float(lg.outcome.coverage_pct),
+        "error_pp": float(lg.outcome.coverage_pct - lg.corrected_pred_cov),
+        "card_error_pp": float(lg.residual),
+        "next_feedback_pp": float(lg.extra.get("bias_after", lg.bias)),
+    }
+
+
 def timeseries_frame(logs: Sequence, upto: int | None = None) -> pd.DataFrame:
+    """One row per section (the first ``upto + 1`` if given) from ``loop_numbers``; ``error`` is
+    panel D's prediction error, ``residual`` the card-based error the controller sees."""
     ls = list(logs if upto is None else logs[: upto + 1])
+    nums = [loop_numbers(l) for l in ls]
     return pd.DataFrame({
         "k": [l.k + 1 for l in ls],
-        "predicted": [l.pred.coverage_pct for l in ls],
-        "corrected": [l.corrected_pred_cov for l in ls],
-        "measured": [l.meas.coverage_pct for l in ls],
-        "true": [l.outcome.coverage_pct for l in ls],
-        "bias": [l.bias for l in ls],
-        "bias_after": [l.extra.get("bias_after", l.bias) for l in ls],
-        "residual": [l.residual for l in ls],
+        "predicted": [n["predicted"] for n in nums],
+        "corrected": [n["after_feedback"] for n in nums],
+        "measured": [n["card"] for n in nums],
+        "true": [n["actual"] for n in nums],
+        "bias": [n["feedback_pp"] for n in nums],
+        "bias_after": [n["next_feedback_pp"] for n in nums],
+        "residual": [n["card_error_pp"] for n in nums],
+        "error": [n["error_pp"] for n in nums],
     })
+
+
+# ------------------------------------------------- model outputs and changes
+
+def _fmt(v: float, nd: int) -> str:
+    return f"{v:.{nd}f}".rstrip("0").rstrip(".") if nd else f"{v:.0f}"
+
+
+def setting_changes(prev, cur) -> list[str]:
+    """What the controller changed from section ``prev`` to ``cur`` (two SegmentLogs), in plain
+    words: nozzle, pressure and, only where the controller sets them, travel speed and boom
+    height. Changes in the field's own speed or height are conditions, not decisions."""
+    from coverageai.contracts import effective_boom_height_m, effective_speed_kmh
+    a, b = prev.u, cur.u
+    out = []
+    if (a.family, a.size) != (b.family, b.size):
+        out.append(f"nozzle {a.family} {a.size} to {b.family} {b.size}")
+    if abs(a.pressure_psi - b.pressure_psi) > 1e-9:
+        out.append(f"pressure {a.pressure_psi:g} to {b.pressure_psi:g} psi "
+                   f"({b.pressure_psi - a.pressure_psi:+g})")
+    if a.travel_speed_kmh is not None or b.travel_speed_kmh is not None:
+        va, vb = effective_speed_kmh(prev.x, a), effective_speed_kmh(cur.x, b)
+        if abs(va - vb) > 1e-9:
+            out.append(f"speed {_fmt(va, 1)} to {_fmt(vb, 1)} km/h ({vb - va:+.1f})")
+    if a.boom_height_m is not None or b.boom_height_m is not None:
+        ha, hb = effective_boom_height_m(prev.x, a), effective_boom_height_m(cur.x, b)
+        if abs(ha - hb) > 1e-9:
+            out.append(f"boom {ha:.2f} to {hb:.2f} m ({hb - ha:+.2f})")
+    return out
+
+
+def decision_frame(res: "PassResult") -> pd.DataFrame:
+    """Everything the predictive model and the selector put out for each section of a run, one
+    row per section: the chosen setting, the model's coverage prediction with its interval, the
+    predicted drift, what the card and the simulator then showed, and what changed against the
+    previous section. This is the table to export or diff."""
+    from coverageai.contracts import effective_boom_height_m, effective_speed_kmh
+    rows = []
+    for k, lg in enumerate(res.logs):
+        n = loop_numbers(lg)
+        rows.append({
+            "section": k + 1, "nozzle": f"{lg.u.family} {lg.u.size}",
+            "pressure_psi": lg.u.pressure_psi,
+            "speed_kmh": effective_speed_kmh(lg.x, lg.u),
+            "boom_height_m": effective_boom_height_m(lg.x, lg.u),
+            "volume_gpa": lg.derived.app_rate_gpa, "droplet_class": lg.derived.droplet_class,
+            "wind_ms": lg.x.wind_speed_ms,
+            "predicted_cov": n["predicted"], "predicted_lo": lg.pred.coverage_lo,
+            "predicted_hi": lg.pred.coverage_hi, "feedback_pp": n["feedback_pp"],
+            "after_feedback_cov": n["after_feedback"], "card_cov": n["card"],
+            "actual_cov": n["actual"], "error_pp": n["error_pp"],
+            "predicted_drift_pct": 100.0 * lg.pred.drift_frac,
+            "actual_drift_pct": 100.0 * lg.outcome.drift_frac,
+            "changed": "; ".join(setting_changes(res.logs[k - 1], lg)) if k else "",
+        })
+    return pd.DataFrame(rows)
+
+
+def logs_frame(res: "PassResult") -> pd.DataFrame:
+    """The complete flat run log (``loop.logs_to_frame``): every logged field of every section."""
+    return logs_to_frame(res.logs)
+
+
+def run_summary(res: "PassResult") -> dict[str, float]:
+    kp = compute_kpis(res.logs, res.c_req)
+    return {"Sections meeting target (%)": 100.0 * kp["frac_met"],
+            "Average coverage (%)": kp["mean_cov"],
+            "Average spray volume (gal/acre)": kp["mean_gpa"],
+            "Average drift (%)": 100.0 * kp["mean_drift"],
+            "Sections to re-spray": float(kp["n_retreat"])}
+
+
+def run_changes(prev: "PassResult", cur: "PassResult") -> dict:
+    """What differs between two runs: the inputs the user changed (``meta["inputs"]``, a dict of
+    display name -> value set by the UI), the run-level results, and every section where the
+    model chose a different setting (only when both runs cover the same number of sections)."""
+    pin, cin = prev.meta.get("inputs", {}), cur.meta.get("inputs", {})
+    inputs = [{"Input": k, "Previous run": pin.get(k, ""), "This run": cin.get(k, "")}
+              for k in dict.fromkeys([*pin, *cin]) if pin.get(k) != cin.get(k)]
+    a, b = run_summary(prev), run_summary(cur)
+    results = [{"Result": k, "Previous run": a[k], "This run": b[k], "Change": b[k] - a[k]} for k in b]
+    rows = []
+    if prev.n == cur.n:
+        for k, (p, c) in enumerate(zip(prev.logs, cur.logs)):
+            diff = setting_changes(p, c)
+            if diff:
+                rows.append({"Section": k + 1, "Previous run": setting_text(p.u),
+                             "This run": setting_text(c.u), "Changed": "; ".join(diff),
+                             "Predicted coverage change (pp)": c.pred.coverage_pct - p.pred.coverage_pct,
+                             "Actual coverage change (pp)": c.outcome.coverage_pct - p.outcome.coverage_pct})
+    return {"inputs": pd.DataFrame(inputs, columns=["Input", "Previous run", "This run"]),
+            "results": pd.DataFrame(results),
+            "sections": pd.DataFrame(rows, columns=["Section", "Previous run", "This run", "Changed",
+                                                    "Predicted coverage change (pp)",
+                                                    "Actual coverage change (pp)"]),
+            "comparable": prev.n == cur.n, "n_changed": len(rows), "n": cur.n}
+
+
+def setting_text(u: Setting) -> str:
+    """'XR 04 at 40 psi', plus the travel speed / boom height when the controller set them."""
+    t = f"{u.family} {u.size} at {u.pressure_psi:g} psi"
+    if u.travel_speed_kmh is not None:
+        t += f", {u.travel_speed_kmh:g} km/h"
+    if u.boom_height_m is not None:
+        t += f", boom {u.boom_height_m:.2f} m"
+    return t
+
+
+def recommendations(res: "PassResult") -> list:
+    """One ``recommend.Recommendation`` per section (cached on the result): for every section
+    whose card reads below the target, which of pressure, speed and boom height to change and by
+    how much, from the run's own predictive model."""
+    if "recommendations" not in res.meta:
+        from coverageai.recommend import recommend_for_logs
+        res.meta["recommendations"] = recommend_for_logs(
+            res.modules.model, res.logs, res.c_req, derive_fn=res.modules.derive_fn)
+    return res.meta["recommendations"]
+
+
+def recommendation_frame(res: "PassResult") -> pd.DataFrame:
+    """Sections that need a change, with the advice in words."""
+    rows = []
+    for k, (lg, r) in enumerate(zip(res.logs, recommendations(res))):
+        if r.status == "ok":
+            continue
+        rows.append({"Section": k + 1, "Setting used": setting_text(lg.u),
+                     "Card reading (%)": r.observed_cov, "Short of target (pp)": r.shortfall_pp,
+                     "Recommendation": r.headline(),
+                     "Alternatives": "; ".join(s[3:] for s in r.lines()[1:])})
+    return pd.DataFrame(rows, columns=["Section", "Setting used", "Card reading (%)",
+                                       "Short of target (pp)", "Recommendation", "Alternatives"])
 
 
 def top_candidates_frame(info: dict | None) -> pd.DataFrame:
@@ -590,15 +835,21 @@ def compare_policies(modules: Modules, conds: Sequence[Conditions], seed: int, m
                      policies: Sequence[str] = ("open", "fast", "fast_slow", "oracle"),
                      render: bool = False, fixed_setting: Setting | None = None,
                      n_learn: int = N_LEARN_PASSES, speed_control: bool = False,
-                     boom_control: bool = False, forecaster: str | None = None
+                     boom_control: bool = False, forecaster: str | None = None,
+                     fixed_nozzle: str | tuple[str, str] | None = None
                      ) -> dict[str, PassResult]:
-    """Run each policy on the same conditions, seed and hidden mismatch realization."""
+    """Run each policy on the same conditions, seed and hidden mismatch realization. With
+    ``fixed_nozzle="auto"`` the nozzle is chosen once (first policy) and held for all of them."""
     out = {}
     for p in policies:
         out[p] = run_pass_wrapper(modules, conds, p, seed, mismatch, c_req, lam,
                                   fixed_setting=fixed_setting if p == "best_fixed" else None,
                                   render=render, n_learn=n_learn, speed_control=speed_control,
-                                  boom_control=boom_control, forecaster=forecaster)
+                                  boom_control=boom_control, forecaster=forecaster,
+                                  fixed_nozzle=fixed_nozzle)
+        nz = out[p].meta["nozzle"]
+        if fixed_nozzle == "auto" and nz.get("family"):
+            fixed_nozzle = (nz["family"], nz["size"])
     return out
 
 

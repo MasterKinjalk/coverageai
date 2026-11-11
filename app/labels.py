@@ -30,7 +30,8 @@ FAMILY = {"XR": "XR - Extended-range flat fan (110°)", "TP65": "TP65 - Standard
           "DGX40": "DGX40 - Drift Guard pre-orifice flat fan (40°)"}
 SERIES = {"predicted": "Model prediction", "corrected": "Prediction after feedback",
           "measured": "Card reading", "true": "Actual coverage",
-          "bias": "Feedback correction (pp)", "residual": "Remaining error"}
+          "bias": "Feedback correction (pp)", "residual": "Remaining error",
+          "error": "Prediction error (pp)"}
 
 WSP_HELP = ("A water-sensitive paper (WSP) card is a small yellow strip that turns blue where spray "
             "droplets land. The share of the card that turns blue is the 'coverage'.")
@@ -55,6 +56,16 @@ def preset(k):
 
 
 def size(s): return f"Size {s}"
+
+
+def nozzle_choice(k) -> str:
+    """Sidebar "Nozzle on the boom" options: auto, free, or 'FAMILY-SIZE'."""
+    if k == "auto":
+        return "One nozzle for the whole field (model picks it)"
+    if k == "free":
+        return "Any nozzle, may change every section (experimental)"
+    fam, _, sz = str(k).partition("-")
+    return f"{fam} {sz} for the whole field"
 
 
 def setting(fam: str, sz: str, psi: float) -> str:
@@ -140,3 +151,27 @@ CMP_COLS = {"policy": "Control strategy", "requirement met (%)": "Sections meeti
             "mean drift (frac)": "Average drift (fraction)",
             "re-treatment flags": "Needs re-spraying (sections)",
             "infeasible": "No nozzle meets target (sections)"}
+
+# "What the model decided" tables (app_logic.decision_frame) and their number formats
+DECISION_COLS = {"section": "Section", "nozzle": "Nozzle", "pressure_psi": "Pressure (psi)",
+                 "speed_kmh": "Travel speed (km/h)", "boom_height_m": "Boom height (m)",
+                 "volume_gpa": "Spray volume (gal/acre)", "droplet_class": "Droplet size",
+                 "wind_ms": "Wind (m/s)", "predicted_cov": "Model prediction (%)",
+                 "predicted_lo": "Prediction low (%)", "predicted_hi": "Prediction high (%)",
+                 "feedback_pp": "Feedback correction (pp)",
+                 "after_feedback_cov": "Prediction after feedback (%)", "card_cov": "Card reading (%)",
+                 "actual_cov": "Actual coverage (%)", "error_pp": "Prediction error (pp)",
+                 "predicted_drift_pct": "Predicted drift (%)", "actual_drift_pct": "Actual drift (%)",
+                 "changed": "Changed since the previous section"}
+DECISION_FMT = {"pressure_psi": "{:g}", "speed_kmh": "{:.1f}", "boom_height_m": "{:.2f}",
+                "volume_gpa": "{:.1f}", "wind_ms": "{:.1f}", "predicted_cov": "{:.1f}",
+                "predicted_lo": "{:.1f}", "predicted_hi": "{:.1f}", "feedback_pp": "{:+.2f}",
+                "after_feedback_cov": "{:.1f}", "card_cov": "{:.1f}", "actual_cov": "{:.1f}",
+                "error_pp": "{:+.2f}", "predicted_drift_pct": "{:.2f}", "actual_drift_pct": "{:.2f}"}
+
+# Feedback-loop table (app_logic.timeseries_frame), in reading order
+LOOP_COLS = {"k": "Section", "predicted": "Model prediction (%)", "bias": "Feedback correction (pp)",
+             "corrected": "Prediction after feedback (%)", "measured": "Card reading (%)",
+             "true": "Actual coverage (%)", "error": "Prediction error (pp)",
+             "residual": "Error seen by the controller (pp)",
+             "bias_after": "Correction after this card (pp)"}
