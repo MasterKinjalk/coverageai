@@ -9,7 +9,7 @@ Everything is simulation-based. Do not write anything that reads as field valida
 ## Where to start
 
 - Open work and current status: `Docs/NEXT_STEPS.md`. Read it first.
-- Design decisions: `Docs/decisions.md` (D1 to D22). Add a row for every new design choice, in
+- Design decisions: `Docs/decisions.md` (D1 to D31). Add a row for every new design choice, in
   the same style: the issue, the decision, the evidence, and what was not tested.
 - Setup and commands: `README.md`. Scope and success criteria: Table 1 of
   `Docs/CoverageVisionAI_Project_Proposal (1).pdf`. `PLAN.md` is the original plan, kept for history.
@@ -41,20 +41,36 @@ lock file over the CUDA build. The repo path has a space: quote it. `pyproject.t
 - `selector.py`: `ConstrainedSelector` (eq. 2), opt-in speed, boom-height and nozzle-lock options.
 - `loop.py`: `run_pass` (one pass, six policies), `run_passes_slow`, the two oracles.
   `feedback.py`: fast bias loop and slow residual correction. `forecast.py`: opt-in wind forecast.
+  `feedback_learned.py`: opt-in trained card feedback (D29), passed as `run_pass(feedback=)`.
 - `vision/`: `render.py` (card renderer), `classical.py` (reader B0), `unet.py` (reader B1).
-- `integration.py`: `build_modules(model, verifier)` assembles the stack.
+- `integration.py`: `build_modules(model, verifier)` assembles the stack. `calibrate_reader=True`
+  (opt-in, D30) removes the card reader's known mean error per coverage band.
 - `recommend.py`: operator advice (which of pressure, speed, boom height to change, D20).
+- `rate_control.py`: fixed application rate (D32). With nozzle and gal/acre fixed, speed follows
+  pressure; `ConstrainedSelector.rate_lock` (needs `nozzle_lock`) and `recommend(rate_lock=)` use
+  it; `alternative_nozzles` ranks other tips at the same rate. Opt-in, off by default.
 - App: `app_logic.py` is all non-UI logic and returns one `PassResult` per run.
   `field_anim.py` turns it into the replay payload; `app/field_run_view.py` is the canvas
-  (plain JS in a Python string); `app/main.py` is widgets and layout only; `app/labels.py`
-  holds every display name; `spray_lab.py` + `app/spray_lab_view.py` are the simulator tab.
+  (plain JS in a Python string); `app/main.py` is widgets and layout only; `app/ui.py` is the
+  shared look (stylesheet, KPI tiles, badges); `app/labels.py` holds every display name;
+  `spray_lab.py` + `app/spray_lab_view.py` are the Nozzle lab view; `operator_console.py` +
+  `app/operator_view.py` are the Operator console (D32); `stats.py` holds the
+  bootstrap helpers used by the multi-seed comparison.
+- App layout (D23, D32): four views (Field run, Compare strategies, Nozzle lab, Operator
+  console). The sidebar holds the inputs of the view on screen with its one Run button on top;
+  the main area holds results.
+  Only the open view is computed.
 
 ## Rules that are easy to break
 
 1. **New controller features are opt-in and default off.** With them off, results must not
    change. `tests/test_defaults_golden.py` pins 11 default runs by digest; if it fails you
    changed default behaviour. Regenerate the digests only after a deliberate, logged decision.
-   The app is the one place where a default may differ (it holds one nozzle per field, D19).
+   The app is the one place where a default may differ: it holds one nozzle per field (D19),
+   holds the rate in the Operator console only (D32),
+   removes the card reader's known error (D30) and uses the trained card feedback for the
+   "Model + card feedback" strategy (D31). `app_logic.default_feedback_choice()` and the
+   `in_calibrate` widget are the only places that turn those on.
 2. **Random streams are a contract** (see the docstrings of `simulator.py` and `loop.py`).
    Section k draws from `default_rng([seed, k])`; the renderer, noisy reader and anemometer use
    `[seed, k, 1]`, `[seed, k, 2]`, `[seed, k, 3]`. The hidden draws come first and do not depend
@@ -77,6 +93,35 @@ lock file over the CUDA build. The repo path has a space: quote it. `pyproject.t
 8. In the app, the replay and the charts below it must read the same numbers: both go through
    `app_logic.loop_numbers`. Card pictures in the replay come from recording proxies around the
    renderer and verifier, so a run renders and reads each card once.
+9. In the app, one quantity has one name, one number and one definition in every view. Run totals
+   come from `app_logic.compute_kpis` only (the replay does not recompute them). Good / Borderline
+   / Poor are the fixed limits of `spec.coverage_classes`; the target is a separate line. The
+   Nozzle lab and `app_logic.nozzle_point` must give the same coverage for the same inputs.
+10. App inputs are keyed widgets (`in_*`, `lab_*`), seeded once in `init_state()` and re-assigned
+    every run, because a view that does not draw a widget would otherwise lose its value. Do not
+    give a button a key with those prefixes. Write `st.session_state["section"]` only before the
+    "Section" slider is created (in a callback, or above it in `render_field`).
+11. The app runs the learning strategy with `same_field=True` (D24). Outside the app the default
+    is off and pinned by the golden digests.
+12. The replay must show, live, what the model put out for the section and what the feedback
+    correction is based on (the six rows under the card, D28). Do not remove them as a duplicate
+    of the charts: the charts show the values, the rows show where they come from. The fast loop
+    learns from card reading minus the RAW model prediction (`loop_numbers` `raw_error_pp`), per
+    regime; `app_logic.feedback_basis` and `feedback_rule_text` are the one place that says so.
+13. Trained feedback models (`models/feedback_*_v1.joblib`, `_v2.joblib`) store their feature list
+    and refuse to load on a different one. If you change `feedback_learned.FEATURE_NAMES` or
+    `HistoryState`, bump `FEATURE_VERSION` and retrain with `experiments/train_feedback_model.py`.
+    v2 (trained on calibrated card readings) is the one the app loads
+    (`feedback_learned.DEFAULT_VERSION`); scripts that mean v1 must say `MODEL_PATHS[1]`. Training
+    seeds are 20000 and up, validation 21000 to 21029. Never train or tune on evaluation seeds
+    0 to 19 or 100 to 119.
+14. The trained feedback runs with the `fast` strategy only (`app_logic.TRAINED_FEEDBACK_POLICIES`).
+    With the learning strategy its correction adds to the slow loop's offset and overshoots (D31).
+15. A reader is calibrated only from a table that was checked in the loop: the noisy reader from
+    its own bands, an image reader from `results/<reader>_loop_calibration.json`
+    (`experiments/calibrate_reader_loop.py`). The table from the reader's validation cards
+    (`<reader>_synthetic.json`) reversed the bias in the loop; `calibrate_reader="synthetic"`
+    exists only to reproduce that negative result (D30).
 
 ## Evaluations
 
@@ -91,7 +136,10 @@ State what was not tested (for example, D19 and D20 have no multi-seed evaluatio
   `git add -A`, never stash. To compare against HEAD use a `git worktree` in a temp folder and
   run the main `.venv` python with `PYTHONPATH=<worktree>/src`.
 - App tests (`streamlit.testing`) are slow. Use `?verifier=perfect&cards=0` unless the test is
-  about cards. To look at the page, drive headless Chrome with the `Browser` class in
+  about cards. Select a view in a test with `at.session_state["view"] = "Compare strategies"`.
+  A running Streamlit server keeps imported modules (`labels`, `charts`, `app_logic`) cached:
+  restart it after editing them, and check that the old process is really gone
+  (`Get-NetTCPConnection -LocalPort <port>`) before trusting what the page shows. To look at the page, drive headless Chrome with the `Browser` class in
   `experiments/readme_media.py`; the replay canvas can be rendered standalone from
   `field_run_view._HTML`.
 - For large multi-line edits write a small patch script to a temp file and run it; long shell

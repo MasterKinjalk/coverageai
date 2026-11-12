@@ -1,10 +1,13 @@
 """Animated "Field run" view: publication-style figures that play over time with a moving
-cursor. Self-contained canvas component (no Streamlit reruns, no network dependencies).
+cursor. Self-contained canvas page (no network dependencies). Playing causes no Streamlit rerun;
+a deliberate pick (pause, click, scrub) is reported to the app, see ``section_picked``.
 
 One timeline drives everything: the field map (A), the water-sensitive paper card of the section
 being sprayed with the card reader's outline (live, one card per section), the coverage, weather,
-drift and feedback panels (B, C, C2, D), what the controller changed since the previous section
-and the operator recommendation when a card reads below the target."""
+drift and feedback panels (B, C, C2, D), and under the card the section's numbers as they go
+round the loop: what the model predicted, the feedback correction applied and what it rests on,
+what the card read, the error the next correction is built from, the setting and what changed in
+it, and the operator recommendation when a card reads below the target."""
 from __future__ import annotations
 
 import json
@@ -28,27 +31,27 @@ _HTML = r"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewpor
 #stage{flex:1;min-height:0;position:relative;background:#161b22;border:1px solid #2b3340;border-radius:10px;overflow:hidden}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 #ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-button{background:#1f2630;color:#e6edf3;border:1px solid #2b3340;border-radius:6px;padding:4px 12px;font:inherit;cursor:pointer}
-button:hover{background:#2b3340}button.on{background:#2f6fed;border-color:#2f6fed}
+button{background:#161b22;color:#e6edf3;border:1px solid #2b3340;border-radius:8px;padding:5px 13px;font:inherit;cursor:pointer}
+button:hover{border-color:#4da3ff;color:#4da3ff}button.on{background:#1b2a41;border-color:#4da3ff;color:#8ec5ff}
+#play{background:#4da3ff;border-color:#4da3ff;color:#fff;font-weight:600;min-width:76px}#play:hover{background:#6cb4ff;color:#fff}
+#spd{display:inline-flex}#spd button{border-radius:0;margin-left:-1px;padding:5px 10px}
+#spd button:first-child{border-radius:8px 0 0 8px;margin-left:0}#spd button:last-child{border-radius:0 8px 8px 0}
+#spd button.on{position:relative;z-index:1}
+#ctl .lab{color:#8a94a6;font-size:12px;margin-left:4px}
 #scrub{flex:1;min-width:140px;accent-color:#4da3ff}
-#read{font-size:12px;color:#8a94a6;min-height:34px;background:#161b22;border:1px solid #2b3340;border-radius:8px;padding:4px 10px}
-#read b{color:#e6edf3;font-weight:600}
 #tip{position:absolute;display:none;pointer-events:none;background:#0e1117ee;border:1px solid #3a4454;border-radius:8px;padding:6px 9px;font-size:11.5px;line-height:1.4;white-space:nowrap;z-index:5}
 #tip b{color:#e6edf3}#tip .m{color:#8a94a6}
-#sum{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(14,17,23,.72);z-index:6}
-#sum>div{background:#161b22;border:1px solid #2b3340;border-radius:12px;padding:16px 24px;min-width:300px}
-#sum h2{margin:0 0 8px;font-size:16px;color:#e6edf3}
-#sum table{border-collapse:collapse;width:100%;margin-bottom:12px}#sum td{padding:3px 0;border-bottom:1px solid #2b3340}#sum td:last-child{text-align:right;color:#e6edf3;font-weight:600}
 #kinfo{position:absolute;display:none;pointer-events:none;font-size:12px;line-height:1.45;color:#c9d1d9;overflow:hidden}
 #kinfo b{color:#e6edf3;font-weight:600}#kinfo .m{color:#8a94a6}#kinfo .up{color:#3ddc97}#kinfo .dn{color:#ef5b5b}
-#kinfo .adv{display:block;margin-top:5px;padding:5px 8px;border:1px solid #2b3340;border-left:3px solid #f5b942;border-radius:6px;background:#10151c}
+#kinfo table{border-collapse:collapse;width:100%}#kinfo td{padding:0 0 1px 0;vertical-align:top}
+#kinfo td:first-child{color:#8a94a6;white-space:nowrap;padding-right:10px;width:1%}
+#kinfo .adv{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin-top:5px;padding:5px 8px;border:1px solid #2b3340;border-left:3px solid #f5b942;border-radius:6px;background:#10151c}
 #kinfo .adv.fine{border-left-color:#3ddc97}#kinfo .adv.hard{border-left-color:#ef5b5b}
 </style></head><body><div id="app">
-<div id="top"></div>
-<div id="stage"><canvas id="cv"></canvas><div id="kinfo"></div><div id="tip"></div><div id="sum"></div></div>
-<div id="ctl"><button id="play">Pause</button><button id="restart">Restart</button><span id="spd"></span><button id="ov" class="on" style="display:none"></button>
+<div id="ctl"><button id="play">Pause</button><button id="restart">Restart</button><span class="lab">Speed</span><span id="spd"></span><button id="ov" class="on" aria-pressed="true" style="display:none">Card outline</button>
 <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position"><span id="pos" style="color:#8a94a6;min-width:90px;text-align:right"></span></div>
-<div id="read"></div>
+<div id="top"></div>
+<div id="stage"><canvas id="cv"></canvas><div id="kinfo"></div><div id="tip"></div></div>
 </div>
 <script>
 const D=__PAYLOAD__;
@@ -64,14 +67,18 @@ const mkImg=b=>{if(!b)return null;const i=new Image();i.src='data:image/jpeg;bas
 const IM=S.map(s=>mkImg(s.img)),OV=S.map(s=>mkImg(s.overlay));
 let showOv=true;
 if(D.has_cards&&D.overlay_name){const b=$('ov');b.style.display='';b.title=D.overlay_name;
- const lab=()=>{b.textContent='Card outline: '+(showOv?'on':'off');b.classList.toggle('on',showOv)};lab();
+ const lab=()=>{b.classList.toggle('on',showOv);b.setAttribute('aria-pressed',showOv)};lab();
  b.onclick=()=>{showOv=!showOv;lab()}}
-$('spd').innerHTML=[0.5,1,2,4].map(s=>'<button data-s="'+s+'" class="'+(s===1?'on':'')+'">'+s+'x</button>').join(' ');
+$('spd').innerHTML=[0.5,1,2,4].map(s=>'<button data-s="'+s+'" class="'+(s===1?'on':'')+'">'+s+'x</button>').join('');
 $('spd').onclick=e=>{const s=e.target.dataset&&e.target.dataset.s;if(!s)return;speed=+s;[...$('spd').children].forEach(b=>b.classList.toggle('on',b.dataset.s===s))};
 function sync(){$('play').textContent=(t>=N)?'Replay':(playing?'Pause':'Play')}
-$('play').onclick=()=>{if(t>=N){t=0;playing=true}else playing=!playing;sync()};
+// Tell the host page which section is in view (pause, click, scrub). The app listens and shows
+// that section's details; standalone (no listener) this does nothing.
+function tell(){try{parent.postMessage({cvai:'section',k:Math.min(Math.floor(t),N-1)+1},'*')}catch(e){}}
+$('play').onclick=()=>{if(t>=N){t=0;playing=true}else{playing=!playing;if(!playing)tell()}sync()};
 $('restart').onclick=()=>{t=0;playing=true;sync()};
 $('scrub').oninput=e=>{t=e.target.value/1000*N;sync()};
+$('scrub').onchange=()=>{playing=false;sync();tell()};
 $('scrub').addEventListener('pointerdown',()=>scrubbing=true);
 window.addEventListener('pointerup',()=>scrubbing=false);
 
@@ -110,7 +117,7 @@ function layout(){
  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
  const m=10,wide=W>=760;
  let A,R;
- if(wide){const lw=Math.max(300,Math.min(W*0.4,520));A={x:m,y:m,w:lw-m,h:H-2*m};R={x:lw+m,y:m,w:W-lw-2*m,h:H-2*m}}
+ if(wide){const lw=Math.max(300,Math.min(W*0.44,560));A={x:m,y:m,w:lw-m,h:H-2*m};R={x:lw+m,y:m,w:W-lw-2*m,h:H-2*m}}
  else{const ah=Math.min(H*0.5,460);A={x:m,y:m,w:W-2*m,h:ah};R={x:m,y:ah+2*m,w:W-2*m,h:H-ah-3*m}}
  // heatmap panel (upper part of the left column; the card panel takes the rest)
  const lapW=54,top=26,pad=6;
@@ -120,10 +127,11 @@ function layout(){
  let cw=(gw-(cols-1)*g)/cols,ch=(gh-(rows-1)*g)/rows;
  ch=Math.min(ch,cw*0.95,92);cw=Math.min(cw,ch*1.6+20);
  const gridW=cols*cw+(cols-1)*g,gridH=rows*ch+(rows-1)*g;
- LA={A:A,gx:gx,gy:A.y+top,cw:cw,ch:ch,g:g,gridW:gridW,gridH:gridH,cbY:A.y+top+gridH+38,cbH:11};
+ LA={A:A,gx:gx,gy:A.y+top,cw:cw,ch:ch,g:g,gridW:gridW,gridH:gridH,cbY:A.y+top+gridH+28,cbH:10};
  // card panel K: title, card image, gauge, then the text block (#kinfo)
- const ky=LA.cbY+LA.cbH+78,K={x:A.x,y:ky,w:A.w-pad,h:A.y+A.h-ky};
- K.imgH=D.has_cards?Math.max(0,Math.min(K.w/2.25,K.h-150)):0;
+ const ky=LA.cbY+LA.cbH+48,K={x:A.x,y:ky,w:A.w-pad,h:A.y+A.h-ky};
+ // leave room under the card for the six loop rows and a two-line recommendation
+ K.imgH=D.has_cards?Math.max(0,Math.min(K.w/2.25,K.h-222)):0;
  K.gY=K.y+22+K.imgH+9;
  LA.K=K.h>=70?K:null;
  const ki=$('kinfo');
@@ -212,7 +220,7 @@ function drawD(p){
 function tileXY(k){const s=S[k];return{x:LA.gx+s.col*(LA.cw+LA.g),y:LA.gy+s.row*(LA.ch+LA.g)}}
 function drawA(){
  const A=LA.A,cw=LA.cw,ch=LA.ch,c0=cur();
- text('A. Field coverage map (actual coverage per section)',A.x+2,A.y+13,{sz:12.5,w:600,c:CT});
+ text('A. Field map: actual coverage (%)',A.x+2,A.y+13,{sz:12.5,w:600,c:CT});
  // lap labels
  for(let r=0;r<D.rows;r++){const y=LA.gy+r*(ch+LA.g)+ch/2;const dir=(S.find(s=>s.row===r)||{dir:1}).dir;
   text('Lap '+(r+1),A.x+2,y-1,{sz:10.5,c:MUT});text(dir>0?'drive →':'← drive',A.x+2,y+11,{sz:10.5,c:CW})}
@@ -235,7 +243,6 @@ function drawA(){
   const cur_=(k===c0&&t<N),hov=k===hover;
   ctx.lineWidth=cur_||hov?2.2:1;ctx.strokeStyle=cur_?CW:hov?'#e6edf3':'rgba(58,68,84,.9)';rr(c.x,c.y,cw,ch,4);ctx.stroke();
  }
- text('Position along lap (driving order)',LA.gx+LA.gridW/2,LA.gy+LA.gridH+14,{al:'center',sz:10.5,c:MUT});
  // colorbar
  const bx=LA.gx,bw=Math.max(160,LA.gridW),by=LA.cbY,bh=LA.cbH;
  const gr=ctx.createLinearGradient(bx,0,bx+bw,0);for(let i=0;i<=16;i++)gr.addColorStop(i/16,rgb(viridis(i/16*(vmax.max/vmax.max))));
@@ -244,14 +251,12 @@ function drawA(){
  const tx=bx+D.target/vmax.max*bw;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(tx,by-4);ctx.lineTo(tx,by+bh);ctx.stroke();
  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(tx,by-1);ctx.lineTo(tx-4,by-7);ctx.lineTo(tx+4,by-7);ctx.closePath();ctx.fill();
  text('target '+D.target+'%',tx,by-10,{al:'center',sz:10.5,c:CT});
- text('Actual coverage (% of card area)',bx+bw/2,by+bh+28,{al:'center',sz:11.5,c:TXT});
- // key
- const ky=by+bh+46;ctx.strokeStyle=CW;ctx.fillStyle=CW;ctx.lineWidth=1.3;
- const L5=30*(5/Math.max(maxWind,1))*.65+10;
+ // key: one line (wind arrow, re-spray mark)
+ const ky=by+bh+32;ctx.strokeStyle=CW;ctx.fillStyle=CW;ctx.lineWidth=1.3;
+ const L5=22;
  ctx.beginPath();ctx.moveTo(bx,ky-3);ctx.lineTo(bx+L5,ky-3);ctx.stroke();ctx.beginPath();ctx.moveTo(bx+L5+3,ky-3);ctx.lineTo(bx+L5-3,ky-6);ctx.lineTo(bx+L5-3,ky);ctx.closePath();ctx.fill();
- text('wind direction (length ∝ speed, max '+maxWind.toFixed(1)+' m/s)',bx+L5+10,ky,{sz:10,c:MUT});
- text('✖',bx,ky+14,{sz:11,c:'#ff5a5a'});text('needs re-spraying',bx+14,ky+14,{sz:10,c:MUT});
- text('Outlined = current section',bx+bw/2,ky+14,{sz:10,c:MUT});
+ const wl='wind (max '+maxWind.toFixed(1)+' m/s)';text(wl,bx+L5+8,ky,{sz:10,c:MUT});
+ const rx=bx+L5+8+tw(wl,10)+16;text('✖',rx,ky,{sz:11,c:'#ff5a5a'});text('needs re-spraying',rx+14,ky,{sz:10,c:MUT});
 }
 
 // ---------- card panel (live water-sensitive paper card of the section in view)
@@ -282,12 +287,17 @@ function kinfo(){
  const k=kSection(),s=S[k],reached=k<=cur()&&t>=k;let h='';
  if(!reached)h='<span class="m">Section '+s.number+' has not been sprayed yet.</span>';
  else{
-  h='<span style="color:'+CM+'">&#9679;</span> <b>Card reading '+pct(s.card)+'</b> ('+s.label+') &middot; <span class="m">&#9675; actual</span> '+pct(s.actual)+' &middot; <span class="m">target</span> '+D.target+'%';
-  if(k>0){const d=s.card-S[k-1].card;h+='<br><span class="'+(d>=0?'up':'dn')+'">'+(d>=0?'&#9650; +':'&#9660; ')+d.toFixed(1)+' pp</span> <span class="m">'+(d>=0?'better':'worse')+' than the previous card</span>'}
-  h+='<br><span class="m">Setting</span> '+s.nozzle;
-  h+='<br><span class="m">Model changed</span> '+(k===0?'first section':(s.changed.length?s.changed.join('; '):'nothing since the previous section'));
-  if(s.advice.length)h+='<span class="adv'+(s.advice_status==='unreachable'?' hard':'')+'"><b>Recommendation.</b> '+s.advice.join('; ')+'</span>';
-  else if(s.advice_status==='ok')h+='<span class="adv fine"><b>On target.</b> No change needed.</span>';
+  // the section's numbers in loop order: model output, correction and its basis, card, what is learned
+  const row=(a,b)=>'<tr><td>'+a+'</td><td>'+b+'</td></tr>';
+  h='<table>'+row('Model predicted','<b style="color:'+CP+'">'+pct(s.predicted)+'</b> <span class="m">(80% range '+s.pred_lo.toFixed(0)+' to '+s.pred_hi.toFixed(0)+') &middot; drift</span> '+s.pred_drift_pct.toFixed(1)+'%');
+  if(D.feedback){
+   h+=row('Feedback','<b style="color:'+CB+'">'+pp(s.feedback_pp)+'</b> <span class="m">&rarr; expects</span> <b style="color:'+CC+'">'+pct(s.after_feedback)+'</b>');
+   h+=row('based on','<span class="m">'+s.basis+'</span>')}
+  else h+=row('Feedback','<span class="m">not used by this strategy</span>');
+  h+=row('Card read','<b style="color:'+CM+'">'+pct(s.card)+'</b> ('+s.label+') <span class="m">&middot; actual</span> '+pct(s.actual));
+  if(D.feedback)h+=row('Card &minus; model','<b>'+pp(s.card_minus_model_pp)+'</b> <span class="m">&rarr; '+D.next_label+'</span> '+pp(s.next_feedback_pp));
+  h+=row('Setting',s.nozzle+(s.changed.length?' <span class="m">&middot; changed</span> '+s.changed.join('; '):''))+'</table>';
+  if(s.advice.length){const a=s.advice.join('; ');h+='<span class="adv'+(s.advice_status==='unreachable'?' hard':'')+'" title="'+a.replace(/"/g,'&quot;')+'"><b>Recommendation.</b> '+a+'</span>'}
  }
  if(el._h!==h){el.innerHTML=h;el._h=h}
 }
@@ -299,33 +309,26 @@ function draw(){
 
 // ---------- readout / tooltip / summary
 function pct(v){return v.toFixed(1)+'%'}
+function pp(v){return (v>=0?'+':'')+v.toFixed(1)+' pp'}
 function rowsFor(k){
  const s=S[k],reached=k<=cur()&&t>=k;
  let h='<b>Section '+s.number+'</b> <span class="m">(lap '+(s.row+1)+', driving '+(s.dir>0?'right':'left')+')</span><br>';
  h+='<span class="m">Wind</span> '+s.wind_speed_ms.toFixed(1)+' m/s (cross '+s.crosswind_ms.toFixed(1)+') &middot; '+s.temp_c.toFixed(0)+' &deg;C &middot; '+s.rh_pct.toFixed(0)+'% RH<br>';
  h+='<span class="m">Nozzle</span> '+s.nozzle+' &middot; '+s.droplet+' ('+s.vmd_um.toFixed(0)+' &micro;m) &middot; '+s.rate_gpa.toFixed(1)+' gal/acre<br>';
  if(!reached)return h+'<span class="m">Not sprayed yet.</span>';
- h+='<span class="m">Coverage</span> predicted '+pct(s.predicted)+' &rarr; after feedback '+pct(s.after_feedback)+' &rarr; card '+pct(s.card)+' &rarr; actual <b>'+pct(s.actual)+'</b> ('+s.label+')<br>';
+ h+='<span class="m">Coverage</span> predicted '+pct(s.predicted)+' &rarr; after feedback '+pct(s.after_feedback)+' &rarr; card '+pct(s.card)+' ('+s.label+') &rarr; actual <b>'+pct(s.actual)+'</b><br>';
  h+='<span class="m">Drift</span> '+s.drift_pct.toFixed(1)+'% &middot; <span class="m">feedback</span> '+(s.feedback_pp>=0?'+':'')+s.feedback_pp.toFixed(1)+' pp &middot; <span class="m">error</span> '+(s.error_pp>=0?'+':'')+s.error_pp.toFixed(1)+' pp';
  if(s.respray)h+=' &middot; <b style="color:#ff5a5a">&#10006; needs re-spraying</b>';
  if(s.no_nozzle)h+=' &middot; <b style="color:#f5b942">no nozzle meets target</b>';
  if(s.changed.length)h+='<br><span class="m">Model changed</span> '+s.changed.join('; ');
  return h}
 function readout(){
- const k=hover>=0?hover:cur();const h=rowsFor(k);const el=$('read');
- if(el._h!==h){el.innerHTML=h.replace('<br>',' &nbsp;|&nbsp; ').replace(/<br>/g,' &nbsp;|&nbsp; ');el._h=h}
  $('pos').textContent='Section '+(cur()+1)+' / '+N;
  if(!scrubbing)$('scrub').value=Math.round(Math.min(t,N)/N*1000);
 }
-let sumShown=false,sumClosed=false;
-function summary(){
- if(t<N)sumClosed=false;
- const show=t>=N&&!sumClosed;if(show===sumShown)return;sumShown=show;const el=$('sum');el.style.display=show?'flex':'none';if(!show)return;
- const a=S.map(s=>s.actual),m=a.reduce((x,y)=>x+y,0)/N,sd=N>1?Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/(N-1)):0;
- const on=S.filter(s=>s.on_target).length,dr=S.reduce((x,s)=>x+s.drift_pct,0)/N,rs=S.filter(s=>s.respray).length,adv=S.filter(s=>s.advice.length).length;
- el.innerHTML='<div><h2>Pass complete</h2><table><tr><td>Sections on target</td><td>'+on+' / '+N+'</td></tr><tr><td>Coverage, mean &plusmn; sd</td><td>'+m.toFixed(1)+' &plusmn; '+sd.toFixed(1)+' %</td></tr><tr><td>Mean drift</td><td>'+dr.toFixed(1)+' %</td></tr><tr><td>Sections to re-spray</td><td>'+rs+'</td></tr><tr><td>Sections with a recommendation</td><td>'+adv+'</td></tr></table><button id="rp" class="on">Replay</button> <button id="rv">Review run</button></div>';
- $('rp').onclick=()=>{t=0;playing=true;sync()};
- $('rv').onclick=()=>{sumClosed=true}}
+// The run totals are shown once, by the page (KPI row from app_logic.compute_kpis), not recomputed
+// here. Kept as a no-op because experiments/readme_media.py calls it when it steps the replay.
+function summary(){}
 
 function frameLoop(ts){
  if(last===null)last=ts;const dt=Math.min(1,(ts-last)/1000);last=ts;
@@ -345,7 +348,7 @@ cv.addEventListener('mousemove',e=>{hover=pick(e);cv.style.cursor=hover>=0?'poin
  if(x+tip.offsetWidth>W-4)x=e.clientX-r.left-tip.offsetWidth-14;if(y+tip.offsetHeight>H-4)y=H-tip.offsetHeight-4;
  tip.style.left=Math.max(4,x)+'px';tip.style.top=Math.max(4,y)+'px'});
 cv.addEventListener('mouseleave',()=>{hover=-1;$('tip').style.display='none'});
-cv.addEventListener('click',e=>{const k=pick(e);if(k>=0){t=k;playing=false;sync()}});
+cv.addEventListener('click',e=>{const k=pick(e);if(k>=0){t=k;playing=false;sync();tell()}});
 new ResizeObserver(layout).observe(cv.parentElement);layout();
 requestAnimationFrame(frameLoop);
 </script></body></html>"""
@@ -361,8 +364,41 @@ def embed_html(html: str, height: int) -> None:
         components.html(html, height=int(height), scrolling=False)
 
 
-def render_field_animation(res, c_req: float, height: int = 900, cards: bool = True) -> None:
-    """Render the animated field run (runs entirely in the browser, no Streamlit reruns)."""
+def render_field_animation(res, c_req: float, height: int = 760, cards: bool = True) -> None:
+    """Render the animated field run. It plays in the browser with no Streamlit reruns; only a
+    deliberate pick (pause, click on a section, scrub) is reported to the page, see
+    ``section_picked``."""
     payload = field_animation_payload(res, c_req, cards=cards)
     data = json.dumps(payload).replace("</", "<\\/")
     embed_html(_HTML.replace("__PAYLOAD__", data), height)
+
+
+# The replay runs in an iframe, which cannot call Streamlit. This small listener lives in the app
+# page, receives the replay's "section in view" message and hands it to Python as a trigger value.
+_BRIDGE_JS = """
+export default function(component) {
+  const { setTriggerValue } = component;
+  const onMsg = (e) => {
+    const d = e.data;
+    if (d && d.cvai === 'section' && Number.isInteger(d.k)) setTriggerValue('section', d.k);
+  };
+  window.addEventListener('message', onMsg);
+  return () => window.removeEventListener('message', onMsg);
+}
+"""
+_bridge = None
+
+
+def section_picked(key: str = "replay_bridge") -> int | None:
+    """1-based section the user just picked in the replay (pause, click or scrub), else None.
+    Returns a value only on the rerun that the pick caused. None on Streamlit versions without
+    ``st.components.v2`` (the page's own section picker still works)."""
+    global _bridge
+    v2 = getattr(st.components, "v2", None)
+    if v2 is None or not hasattr(v2, "component"):
+        return None
+    if _bridge is None:
+        _bridge = v2.component("coveragevision_replay_bridge", js=_BRIDGE_JS)
+    out = _bridge(key=key, on_section_change=lambda: None)
+    k = getattr(out, "section", None)
+    return int(k) if k is not None else None

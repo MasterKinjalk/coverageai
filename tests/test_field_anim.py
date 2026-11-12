@@ -76,3 +76,23 @@ def test_scientific_fields(res):
         for key in ("vmd_um", "crosswind_ms", "feedback_pp", "error_pp", "wind_speed_ms", "drift_pct"):
             assert math.isfinite(s[key])
         assert s["error_pp"] == pytest.approx(s["actual"] - s["after_feedback"], abs=0.2)
+
+
+def test_payload_carries_model_output_and_what_the_correction_rests_on(res):
+    """The live panel under the card shows, per section, what the model predicted, the correction
+    applied with its basis, and the error the next correction is built from."""
+    p = field_animation_payload(res, 30.0)
+    assert p["feedback"] is True
+    basis = al.feedback_basis(res)
+    for s, lg, b in zip(p["sections"], res.logs, basis):
+        n = al.loop_numbers(lg)
+        assert s["pred_lo"] <= s["predicted"] <= s["pred_hi"]
+        assert s["pred_drift_pct"] == pytest.approx(100 * lg.pred.drift_frac, abs=0.06)
+        assert s["card_minus_model_pp"] == pytest.approx(s["card"] - s["predicted"], abs=0.11)
+        assert s["next_feedback_pp"] == pytest.approx(n["next_feedback_pp"], abs=0.006)
+        assert s["basis"] == b["text"] and "crosswind" in s["basis"]
+    from field_run_view import _HTML
+    for shown in ("Model predicted", "based on", "Card &minus; model", "D.next_label"):
+        assert shown in _HTML, shown
+    assert p["next_label"] == "correction for this group now"      # the rule keeps one correction per group
+

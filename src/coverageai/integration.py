@@ -25,6 +25,7 @@ verifier:
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from dataclasses import dataclass, field
@@ -221,6 +222,101 @@ def noise_bands_from_results(which: str | None = None, results_dir: Path | None 
     return None
 
 
+# ------------------------------------------------------------------ reader calibration (D30)
+
+def loop_calibration_bands(which: str, results_dir: Path | None = None
+                           ) -> tuple[tuple[tuple[float, float, float, float], ...], str] | None:
+    """Error bands ``(lo, hi, sd, bias)`` of an image reader measured on cards from closed-loop
+    passes on development seeds (``results/<reader>_loop_calibration.json``, written by
+    ``experiments/calibrate_reader_loop.py``), or None if that file does not exist.
+
+    The bands of ``results/<reader>_synthetic.json`` come from the reader's validation set, whose
+    cards differ from the ones the loop produces; used as a calibration table in the loop they
+    over-correct the classic reader (D30). So an image reader is calibrated from this file only."""
+    f = (results_dir or ROOT / "results") / f"{which}_loop_calibration.json"
+    if not f.is_file():
+        return None
+    try:
+        rows = json.loads(f.read_text(encoding="utf8"))["bands"]
+        out = sorted((float(r["lo"]), 1e9 if r.get("hi") is None else float(r["hi"]),
+                      float(r.get("sd_pp", 0.0)), float(r["bias_pp"])) for r in rows)
+    except (ValueError, KeyError, TypeError):
+        return None
+    return (tuple(out), f.name) if out else None
+
+
+def reader_calibration_available(verifier: str, results_dir: Path | None = None) -> bool:
+    """Whether ``build_modules(calibrate_reader=True)`` changes anything for this reader."""
+    if verifier == "noisy":
+        return True
+    if verifier in ("b0", "b1"):
+        return loop_calibration_bands(verifier, results_dir) is not None
+    return False
+
+
+def calibration_table(bands) -> tuple[tuple[float, float], ...]:
+    """Calibration of a card reader from its measured error bands.
+
+    ``bands`` are ``(lo, hi, sd, bias)`` on TRUE coverage, as ``noise_bands_from_results`` gives
+    them (the reader's mean error per coverage band, measured on cards whose true coverage is
+    known). Returns ``((upper edge on MEASURED coverage, mean error), ...)``: a reading below an
+    edge is taken to come from that band and the band's mean error is subtracted from it. An edge
+    on the measured scale is the true edge moved by the average of the two neighbouring errors."""
+    bands = sorted((float(lo), float(hi), float(bias)) for lo, hi, _sd, bias in bands)
+    out = []
+    for i, (_lo, hi, bias) in enumerate(bands):
+        edge = hi + 0.5 * (bias + bands[i + 1][2]) if i + 1 < len(bands) else float("inf")
+        out.append((float(edge), bias))
+    return tuple(out)
+
+
+def calibrated_coverage(measured: float, table) -> float:
+    """A raw reading with the reader's mean error for its band removed (see ``calibration_table``)."""
+    for edge, bias in table:
+        if measured < edge:
+            return float(np.clip(measured - bias, 0.0, 100.0))
+    return float(np.clip(measured - table[-1][1], 0.0, 100.0))
+
+
+class CalibratedVerifier:
+    """A card reader with its known mean error removed (opt-in, decision D30).
+
+    The classic image reader under-reads dense cards: on our synthetic cards its mean error is
+    about -3.3 pp above 50 % coverage (``results/b0_synthetic.json``), and the image-free noisy
+    reader reproduces that. A controller that feeds such readings back believes coverage is lower
+    than it is and over-applies, more so the more closely it follows the cards. This wrapper
+    subtracts the reader's mean error for the band a reading falls in, so the reading is an
+    unbiased estimate of the true coverage again. It needs nothing the reader's own validation
+    does not already provide; for a real reader the table would come from annotated cards.
+
+    It forwards every attribute of the wrapped reader, and only the methods that reader has, so
+    ``hasattr(verifier, "measure_outcome")`` and ``"measure_full"`` keep their meaning."""
+
+    def __init__(self, inner, bands, source: str = ""):
+        self.inner = inner
+        self.table = calibration_table(bands)
+        self.calibration_source = source
+
+    def _fix(self, meas: CardMeasurement) -> CardMeasurement:
+        c = calibrated_coverage(meas.coverage_pct, self.table)
+        cls = spec()["coverage_classes"]
+        return dataclasses.replace(meas, coverage_pct=c, coverage_class=coverage_class(
+            c, cls["acceptable_min"], cls["marginal_min"]))
+
+    def __getattr__(self, name: str):
+        if name.startswith("__") or name in ("inner", "table", "calibration_source"):
+            raise AttributeError(name)
+        attr = getattr(self.inner, name)        # AttributeError if the reader has no such method
+        if name in ("measure", "measure_outcome"):
+            return lambda *a, **k: self._fix(attr(*a, **k))
+        if name == "measure_full":
+            def full(*a, **k):
+                out = attr(*a, **k)
+                return (self._fix(out[0]),) + tuple(out[1:])
+            return full
+        return attr
+
+
 def image_verifier_available(name: str) -> bool:
     try:
         make_image_verifier(name)
@@ -246,8 +342,15 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
                   noise_sd_pp: float | None = None, noise_bias_pp: float | None = None,
                   noise_source: str | None = None, results_dir: Path | None = None,
                   noise_bands: bool = True, model_obj=None, record_weight: float | None = None,
-                  n_jobs: int | None = None) -> Modules:
-    """Assemble loop.Modules from real components (see module docstring)."""
+                  n_jobs: int | None = None, calibrate_reader: bool | str = False) -> Modules:
+    """Assemble loop.Modules from real components (see module docstring).
+
+    ``calibrate_reader`` (opt-in, D30; off = unchanged): wrap the card reader in
+    ``CalibratedVerifier``. True: the noisy reader is corrected with its own error bands, an image
+    reader with the bands measured on closed-loop cards (``loop_calibration_bands``); an image
+    reader without that file, and the perfect reader, are left as they are. "synthetic": an image
+    reader is corrected with the bands of ``results/<reader>_synthetic.json`` instead. That table
+    over-corrects in the loop and is kept only so the negative result of D30 can be reproduced."""
     if model not in MODEL_CHOICES:
         raise ValueError(f"model must be one of {MODEL_CHOICES}, got {model!r}")
     if verifier not in VERIFIER_CHOICES:
@@ -294,5 +397,14 @@ def build_modules(model: str = "spray", verifier: str = "perfect", *,
         ver = NoisyVerifier(sd, bias, src, bands)
     else:
         ver = make_image_verifier(verifier)
+    if calibrate_reader and ver is not None:
+        if isinstance(ver, NoisyVerifier):
+            known = (ver.bands or ((0.0, 1e9, ver.sd_pp, ver.bias_pp),), ver.source)
+        elif calibrate_reader == "synthetic":
+            known = noise_bands_from_results(verifier, results_dir)
+        else:
+            known = loop_calibration_bands(verifier, results_dir)
+        if known is not None:
+            ver = CalibratedVerifier(ver, known[0], known[1])
     return Modules(simulator=sim, model=mdl, selector=sel, verifier=ver, renderer=rend,
                    derive_fn=derive)

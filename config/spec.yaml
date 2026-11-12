@@ -111,6 +111,9 @@ selector:
   # selector (ConstrainedSelector.nozzle_lock = (family, size); best_nozzle picks it). Unset =
   # any nozzle per segment, the v1.0 behaviour used by every experiment in results/.
 
+rate_control:              # opt-in fixed application rate (operator console); off unless a rate is set
+  tolerance_frac: 0.05     # applied rate must stay within +-5 % of the target gal/acre
+
 pass:
   segments: 40
   seeds: 20

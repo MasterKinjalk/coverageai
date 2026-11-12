@@ -16,14 +16,24 @@ the animation and the charts below it read.
 
 Honesty note shown in the app: the plant is the simulator, so everything on screen is
 simulation-based evidence, not field validation.
+
+Shared stack: Streamlit caches one module stack for all browser sessions (``st.cache_resource``)
+and every run writes its options onto that stack's selector and restarts its simulator's pass
+state. ``_STACK_LOCK`` (a re-entrant lock) is held for the whole mutate-run-restore part of
+``run_pass_wrapper`` and across ``compare_policies`` / ``compare_seeds``, so two sessions never
+mix their state; a second session waits until the first run is done.
 """
 from __future__ import annotations
 
 import base64
 import copy
+import re
 import dataclasses
+import inspect
 import os
+import threading
 import time
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
@@ -33,6 +43,7 @@ import pandas as pd
 
 from coverageai import scenarios
 from coverageai.config import px_per_mm, spec
+from coverageai.feedback import FALLBACK_DAMPING
 from coverageai.contracts import (Conditions, Outcome, Prediction, Setting,
                                   coverage_class)
 from coverageai.loop import (FORECAST_POLICIES, Modules, POLICIES, logs_to_frame, run_pass,
@@ -52,6 +63,9 @@ BOOM_HEIGHT_OPTIONS_M = (0.30, 0.40, 0.50, 0.60, 0.75)
 FORECAST_CHOICES = ("off", "last", "ewma", "ar1", "ar1+gust")
 CLASS_COLORS = {"acceptable": "#3ddc97", "marginal": "#f5b942", "critical": "#ef5b5b",
                 "pending": "#2b3340"}
+# Held while a run mutates the shared (cached) module stack; re-entrant because compare_policies
+# and compare_seeds hold it across their loops of run_pass_wrapper calls.
+_STACK_LOCK = threading.RLock()
 
 
 # ----------------------------------------------------------------- modules
@@ -83,27 +97,89 @@ class NominalSimModel:
         pass
 
 
-def build_modules_adapter(model: str = "oracle_nominal", verifier: str = "perfect") -> Modules:
-    """The app's module stack (simulator, model, selector, verifier, renderer)."""
+def build_modules_adapter(model: str = "oracle_nominal", verifier: str = "perfect",
+                          calibrate_reader: bool | str = False) -> Modules:
+    """The module stack (simulator, model, selector, verifier, renderer). ``calibrate_reader``
+    (opt-in, D30): remove the card reader's known mean error per coverage band (see
+    ``integration.build_modules``)."""
     from coverageai.integration import build_modules
-    return build_modules(model=model, verifier=verifier)
+    return build_modules(model=model, verifier=verifier, calibrate_reader=calibrate_reader)
+
+
+def reader_calibration_available(verifier: str) -> bool:
+    """Whether a calibration table exists for this card reader (D30): always for the noisy reader,
+    for an image reader only once it has been measured on closed-loop cards, never for perfect."""
+    from coverageai.integration import reader_calibration_available as available
+    return available(verifier)
 
 
 class RecordingSelector:
-    """Transparent proxy that remembers the info dict of every selection, keyed by the
-    (conditions, chosen setting) pair, so the UI can show the top-5 table for a segment
-    (SegmentLog itself only stores a scalar summary)."""
+    """Transparent proxy that remembers the info dict of every selection, so the UI can show the
+    top-5 table for a segment (SegmentLog itself only stores a scalar summary).
+
+    ``records`` keys each info by the (conditions, chosen setting) pair the selector was called
+    with. ``calls`` keeps every call in order as (section tag, conditions, setting, info); the
+    tag is the section count of ``tracker`` at call time (None without a tracker), which lets
+    ``run_pass_wrapper`` find the selection of every section even when the selector was called
+    with forecast conditions instead of the logged ones. Reads are forwarded to ``inner``;
+    set attributes on ``inner``."""
 
     def __init__(self, inner):
         self.inner = inner
         self.records: dict[tuple[Conditions, Setting], dict] = {}
+        self.calls: list[tuple[int | None, Conditions, Setting, dict]] = []
+        self.tracker: _Sections | None = None
 
     def select(self, x, model, bias, c_req):
         u, info = self.inner.select(x, model, bias, c_req)
         self.records[(x, u)] = info
+        t = self.tracker
+        self.calls.append((None if t is None else t.started, x, u, info))
         return u, info
 
     def __getattr__(self, name):
+        if name == "inner" or name.startswith("__"):
+            raise AttributeError(name)
+        return getattr(self.inner, name)
+
+
+class _Sections:
+    """Counts the sections a run simulates and reports progress. ``loop.run_pass`` calls
+    ``modules.model.predict`` exactly once per section, after the selection and before the plant
+    call, for every policy; ``_CountingModel`` turns that call into ``begin_section``. So while
+    section j (0-based, counted over all passes of the run) is being selected, ``started == j``.
+    ``progress(done, total)`` gets the number of finished sections at the start of each section
+    and ``(total, total)`` from ``finish``. Its exceptions propagate."""
+
+    def __init__(self, total: int, progress: Callable[[int, int], None] | None = None):
+        self.started, self.total, self.progress = 0, int(total), progress
+
+    def begin_section(self) -> None:
+        if self.progress is not None:
+            self.progress(min(self.started, self.total), self.total)
+        self.started += 1
+
+    def finish(self) -> None:
+        if self.progress is not None:
+            self.progress(self.total, self.total)
+
+
+class _CountingModel:
+    """Model proxy that tells a ``_Sections`` counter about every single ``predict`` call (one per
+    section in ``loop.run_pass``; the selector and the model wrappers use ``predict_batch``). The
+    prediction itself is passed through unchanged; everything else is forwarded to ``inner``."""
+
+    def __init__(self, inner, sections: _Sections):
+        self.inner, self.sections = inner, sections
+
+    def predict(self, x, u):
+        p = self.inner.predict(x, u)
+        self.sections.begin_section()
+        return p
+
+    def __getattr__(self, name):
+        if name in ("inner", "sections") or name.startswith("__"):
+            raise AttributeError(name)
         return getattr(self.inner, name)
 
 
@@ -114,12 +190,35 @@ READER_COLOR = (255, 64, 64)        # stained area found by the card reader
 TRUTH_COLOR = (0, 255, 200)         # true stained area
 
 
+THUMB_ALPHA = 0.55                  # mask opacity, as overlay_mask
+
+
 def card_thumb(image: np.ndarray, mask: np.ndarray | None = None, color=READER_COLOR,
                width: int = CARD_THUMB_W, quality: int = 60) -> str:
-    """Base64 JPEG of a card photo downscaled to ``width``, with ``mask`` blended over it."""
+    """Base64 JPEG of a card photo downscaled to ``width`` (if wider), with ``mask`` blended over
+    it. Same picture as blending at full resolution and then downscaling (``overlay_mask``), up
+    to resampling and rounding, but about four times faster: blending is linear, so the
+    thumbnail is area(image) + alpha (color area(mask) - area(image under the mask)), and only
+    the three downscaled planes are blended."""
     import cv2
-    blank = np.zeros(image.shape[:2], bool) if mask is None else np.asarray(mask, bool)
-    small = overlay_mask(image, blank, color=color, max_width=width)
+    img = np.ascontiguousarray(image)
+    h, w = img.shape[:2]
+    size = (w, h) if w <= width else (int(width), int(h * (width / w)))
+
+    def area(a: np.ndarray) -> np.ndarray:
+        return a if size == (w, h) else cv2.resize(a, size, interpolation=cv2.INTER_AREA)
+
+    small = area(img)
+    if mask is not None:
+        m = np.asarray(mask, bool)
+        if m.shape[:2] != (h, w):           # as overlay_mask: mask to the image frame first
+            m = cv2.resize(m.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
+        m8 = m.astype(np.uint8)
+        frac = area(m8 * np.uint8(255)).astype(np.float32)[..., None] / 255.0
+        under = area(cv2.bitwise_and(img, img, mask=m8)).astype(np.float32)
+        col = np.asarray(color, np.float32)
+        out = small.astype(np.float32) + THUMB_ALPHA * (col * frac - under)
+        small = np.clip(out, 0, 255).astype(np.uint8)
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(small, cv2.COLOR_RGB2BGR),
                            [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
     return base64.b64encode(buf.tobytes()).decode("ascii") if ok else ""
@@ -166,12 +265,27 @@ class RecordingVerifier(_Proxy):
         return meas
 
 
+def _copy_simulator(sim):
+    """A private copy of the (shared, cached) simulator for a replay.
+
+    The copy is taken without the stack lock, so that looking at a card is not held up by a long
+    run in another browser session. That run may be writing an attribute while we copy, which
+    ``deepcopy`` reports as a RuntimeError ("dictionary changed size during iteration"); the copy
+    is then simply taken again. The values copied do not matter: ``begin_pass`` resets them."""
+    for _ in range(4):
+        try:
+            return copy.deepcopy(sim)
+        except RuntimeError:
+            time.sleep(0.01)
+    return copy.deepcopy(sim)
+
+
 def render_cards(res: "PassResult", max_workers: int | None = None) -> list[dict]:
     """Thumbnails for a run whose loop rendered no cards (perfect or simulated-sensor reader).
     Replays the hidden state once, like ``replay_card``, then renders the cards in threads.
     The cards are for viewing only: nothing in the run read them."""
     m = res.modules
-    sim = copy.deepcopy(m.simulator)
+    sim = _copy_simulator(m.simulator)
     if hasattr(sim, "begin_pass"):
         sim.begin_pass(res.seed, res.mismatch)
     outcomes = [sim.simulate(lg.x, lg.u, segment_rng(res.seed, k), res.mismatch,
@@ -186,12 +300,24 @@ def render_cards(res: "PassResult", max_workers: int | None = None) -> list[dict
 
 
 def ensure_cards(res: "PassResult") -> list[dict] | None:
-    """``res.cards``, rendering them now if the loop did not (None if this stack cannot)."""
-    if res.cards is None and res.modules.renderer is not None:
-        try:
-            res.cards = render_cards(res)
-        except (ValueError, AttributeError, TypeError):    # e.g. a plant without droplets
-            res.cards = None
+    """``res.cards``, rendering them now if the loop did not (None if this stack cannot).
+
+    When it returns None it says why in ``res.meta["cards_note"]`` (plain English, for the
+    page) and does not try again for this result; a rendering error is kept, as text, in
+    ``res.meta["cards_error"]``."""
+    if res.cards is None and "cards_note" not in res.meta:
+        if res.modules.renderer is None:
+            res.meta["cards_note"] = ("This setup has no card renderer, so there are no card "
+                                      "pictures for this run.")
+        else:
+            try:
+                res.cards = render_cards(res)
+            except (ValueError, AttributeError, TypeError) as exc:   # e.g. a plant without droplets
+                res.cards = None
+                res.meta["cards_note"] = ("Card pictures could not be drawn for this run. The "
+                                          "simulator in this setup does not produce the droplet "
+                                          "detail a card picture needs.")
+                res.meta["cards_error"] = f"{type(exc).__name__}: {exc}"
     return res.cards
 
 
@@ -214,12 +340,23 @@ class PassResult:
     label: str = ""
     meta: dict = field(default_factory=dict)
     cards: list[dict] | None = None      # one thumbnail dict per section (see RecordingRenderer)
+    # selector info of the selection applied in each section of the displayed pass (None for a
+    # section without one, e.g. best_fixed); see run_pass_wrapper
+    selections: list[dict | None] | None = None
 
     @property
     def n(self) -> int:
         return len(self.conds)
 
     def info_for(self, k: int) -> dict | None:
+        """Selector info of the setting applied in section k (the final selection when the fast
+        loop selected twice), or None. Uses ``selections`` when the run recorded them, which
+        also works when a wind forecast made the selector plan with other conditions than the
+        logged ones; otherwise the (conditions, setting) lookup in ``records``."""
+        if self.selections is not None and 0 <= k < len(self.selections):
+            info = self.selections[k]
+            if info is not None:
+                return info
         lg = self.logs[k]
         return self.records.get((lg.x, lg.u))
 
@@ -245,14 +382,27 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                      speed_control: bool = False, boom_control: bool = False,
                      forecaster: str | None = None,
                      fixed_nozzle: str | tuple[str, str] | None = None,
-                     capture_cards: bool = False) -> PassResult:
+                     capture_cards: bool = False, same_field: bool = False,
+                     progress: Callable[[int, int], None] | None = None,
+                     feedback_model: Any = None, rate_lock: float | None = None) -> PassResult:
     """Run one pass and keep what the UI needs (selector records, timing, card thumbnails).
 
-    ``fast_slow``: runs ``n_learn`` earlier passes (seeds ``seed + 1009 i``, no card
-    rendering) through ``loop.run_passes_slow`` so the slow loop learns a residual
-    correction, then the displayed pass (seed ``seed + 1009 n_learn``) with the fitted
-    ``ResidualCorrectedModel`` as ``modules.model``. ``meta["passes"]`` holds a per-pass
-    summary (the last row is the displayed pass).
+    ``feedback_model`` (decision D29; None or "rule" = off, the eq. 3 running average): a trained
+    ``feedback_learned.FeedbackModel``, or "xgboost" / "lightgbm" / a path to load one. The fast
+    loop of ``fast`` then takes its correction from that model
+    (``feedback_learned.LearnedFeedback``). Every other strategy ignores it, ``fast_slow``
+    included (``TRAINED_FEEDBACK_POLICIES``). Reported in ``meta["feedback"]``.
+
+    ``fast_slow``: runs ``n_learn`` learning passes (no card rendering) through
+    ``loop.run_passes_slow`` so the slow loop learns a residual correction, then the displayed
+    pass with the fitted ``ResidualCorrectedModel`` as ``modules.model``. ``meta["passes"]``
+    holds a per-pass summary in the order they ran (the last row is the displayed pass).
+    Seeds: with ``same_field`` the displayed pass runs on ``seed`` itself, so it sees the same
+    gusts, canopy, wear and card noise as every other policy on ``seed``, and the learning
+    passes run on ``seed + 1009 i`` for i = 1..n_learn. Without it (default, the behaviour the
+    golden digests pin) the learning passes run on ``seed + 1009 i`` for i = 0..n_learn-1 and
+    the displayed pass on ``seed + 1009 n_learn``. ``PassResult.seed`` is the displayed pass's
+    seed. ``compare_policies`` uses ``same_field=True``.
 
     Starts a simulator pass (persistent canopy/wear + AR(1) gusts) when the simulator
     supports it, applies ``lam`` to the selector for the duration of the call, and
@@ -273,12 +423,80 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     duration of the call; fast_slow learning passes use the same nozzle; best_fixed ignores it.
     The choice is reported in ``meta["nozzle"]``.
 
+    ``rate_lock`` (operator console; None = off): a target application rate in gal/acre, held
+    within the selector's ``rate_tol_frac`` (spec ``rate_control.tolerance_frac``). It needs a
+    named nozzle (``fixed_nozzle`` a (family, size) pair or "FAMILY-SIZE", not None, "free" or
+    "auto"), so best_fixed cannot use it. The selector then moves only pressure, with the speed
+    that holds the rate, and boom height if ``boom_control`` is on (``selector`` module docstring).
+    Checked before the selector is touched (ValueError: no named nozzle, a rate <= 0, a selector
+    without rate mode, or no pressure of the nozzle that holds the rate inside the spec speed
+    range); set on the selector for the duration of the call like ``nozzle_lock``. Reported in
+    ``meta["rate"]`` as ``{"target_gpa", "tol_frac"}``.
+
     ``capture_cards`` keeps a thumbnail of every card the loop renders and reads
     (``PassResult.cards``; None if the loop read no images, see ``ensure_cards``). It wraps the
     renderer and verifier in recording proxies for this call only and does not change any number.
+
+    ``progress(done, total)``, if given, is called at the start of every simulated section with
+    the number of sections finished so far and once more with ``(total, total)`` at the end;
+    ``total`` counts every simulated section (``len(conds) * (n_learn + 1)`` for fast_slow). It
+    is driven by a transparent proxy around the model and changes no number. An exception it
+    raises ends the run and propagates; the shared selector is restored first.
+
+    The whole mutate-run-restore part runs under ``_STACK_LOCK``.
     """
     if policy not in POLICIES:
         raise ValueError(f"unknown policy {policy!r}")
+    with _STACK_LOCK:
+        return _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_setting,
+                                render, pass_id, n_learn, speed_control, boom_control, forecaster,
+                                fixed_nozzle, capture_cards, same_field, progress, feedback_model,
+                                rate_lock)
+
+
+FEEDBACK_CHOICES = ("rule", "xgboost", "lightgbm")     # app option; "rule" is the default
+_FEEDBACK_MODELS: dict[str, Any] = {}
+
+
+def feedback_model_available(name: str) -> bool:
+    """True if a ``FEEDBACK_CHOICES`` entry can run here: its trained file is on disk and its
+    package is installed (xgboost is an optional extra; "rule" needs neither)."""
+    import importlib.util
+    from coverageai.feedback_learned import DEFAULT_PATHS
+    if name == "rule":
+        return True
+    return (name in DEFAULT_PATHS and DEFAULT_PATHS[name].exists()
+            and importlib.util.find_spec(name) is not None)
+
+
+def default_feedback_choice() -> str:
+    """The card feedback the APP uses unless told otherwise (decision D31): the trained model,
+    XGBoost if it can run here, else LightGBM (same accuracy, no extra package), else the rule.
+    The library default (``run_pass_wrapper(feedback_model=None)``, ``loop.run_pass``) stays the
+    eq. 3 rule, so the reported experiments and the golden digests do not move."""
+    return next((c for c in ("xgboost", "lightgbm") if feedback_model_available(c)), "rule")
+
+
+def _learned_feedback(feedback_model: Any):
+    """None for the rule; otherwise a fresh ``LearnedFeedback`` (trained files are loaded once)."""
+    if feedback_model in (None, "", "rule", "off"):
+        return None
+    from coverageai.feedback_learned import LearnedFeedback, load_feedback_model
+    model = feedback_model
+    if isinstance(feedback_model, (str, Path)):
+        key = str(feedback_model)
+        if key not in _FEEDBACK_MODELS:
+            _FEEDBACK_MODELS[key] = load_feedback_model(key)
+        model = _FEEDBACK_MODELS[key]
+    return LearnedFeedback(model)
+
+
+def _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_setting, render,
+                     pass_id, n_learn, speed_control, boom_control, forecaster, fixed_nozzle,
+                     capture_cards, same_field, progress, feedback_model=None,
+                     rate_lock=None) -> PassResult:
+    """Body of ``run_pass_wrapper``; the caller holds ``_STACK_LOCK``."""
+    learned = _learned_feedback(feedback_model) if policy in TRAINED_FEEDBACK_POLICIES else None
     sel = modules.selector
     rec = sel if isinstance(sel, RecordingSelector) else RecordingSelector(sel)
     mods = dataclasses.replace(modules, selector=rec)
@@ -299,8 +517,8 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     # Validate everything that can raise BEFORE touching the (st.cache_resource-shared) selector;
     # then mutate inside the try so the finally always restores, even on a partial failure.
     fc = _make_forecaster(forecaster) if policy in FORECAST_POLICIES else None
-    old_lam = getattr(sel, "lam", None)
     inner = sel.inner if isinstance(sel, RecordingSelector) else sel
+    old_lam = getattr(inner, "lam", None)   # set on inner: a RecordingSelector only forwards reads
     opt_grids: list[tuple[str, Any]] = []
     for on, attr, grid, what in ((speed_control, "speed_options_kmh", SPEED_OPTIONS_KMH, "travel-speed"),
                                  (boom_control, "boom_height_options_m", BOOM_HEIGHT_OPTIONS_M, "boom-height")):
@@ -314,14 +532,29 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
             raise ValueError("this selector does not support holding one nozzle")
         if lock != "auto" and not any((u.family, u.size) == lock for u in inner.candidates):
             raise ValueError(f"nozzle {lock[0]}-{lock[1]} is not in the catalog")
+    if rate_lock is not None:
+        if lock is None or lock == "auto":
+            raise ValueError("rate_lock needs a named nozzle (fixed_nozzle='FAMILY-SIZE')")
+        if not hasattr(inner, "rate_lock"):
+            raise ValueError("this selector does not support a fixed application rate")
+        rate_lock = float(rate_lock)
+        if not rate_lock > 0:
+            raise ValueError(f"rate_lock must be a positive rate in gal/acre, got {rate_lock!r}")
+        from coverageai.rate_control import iso_rate_candidates
+        if not iso_rate_candidates(lock[0], lock[1], rate_lock, inner.rate_tol_frac):
+            raise ValueError(f"no pressure of nozzle {lock[0]}-{lock[1]} holds {rate_lock:g} gal/acre "
+                             "inside the travel-speed range")
     saved_opts: dict[str, Any] = {}
     lam_set = False
     t0 = time.perf_counter()
     meta: dict = {}
     run_seed = int(seed)
+    sections = _Sections(len(conds) * (int(n_learn) + 1 if policy == "fast_slow" else 1), progress)
+    old_tracker = rec.tracker
     try:
+        rec.tracker = sections
         if lam is not None and old_lam is not None:
-            sel.lam = float(lam)
+            inner.lam = float(lam)
             lam_set = True
         for attr, grid in opt_grids:
             saved_opts[attr] = getattr(inner, attr)
@@ -334,18 +567,38 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
             meta["nozzle"].update(family=lock[0], size=lock[1])
             saved_opts["nozzle_lock"] = inner.nozzle_lock
             inner.nozzle_lock = lock
+        if rate_lock is not None:
+            meta["rate"] = {"target_gpa": rate_lock, "tol_frac": float(inner.rate_tol_frac)}
+            saved_opts["rate_lock"] = inner.rate_lock
+            inner.rate_lock = rate_lock
         if policy == "fast_slow":
             run_seed, passes = _learn_between_passes(mods, conds, int(seed), mismatch,
-                                                     float(c_req), int(n_learn), forecaster=fc)
+                                                     float(c_req), int(n_learn), forecaster=fc,
+                                                     same_field=same_field, sections=sections,
+                                                     feedback=learned)
             meta["passes"] = passes
+        if learned is not None:
+            learned.reset()                 # the replayed pass starts with no card, like the rule
+        meta["feedback"] = ({"kind": "learned", "backend": learned.model.backend,
+                             "trees": learned.model.meta.get("trees"), "rows": learned.model.meta.get("n_rows")}
+                            if learned is not None else {"kind": "rule" if policy in FEEDBACK_POLICIES else "none"})
         if hasattr(mods.simulator, "begin_pass"):
             mods.simulator.begin_pass(run_seed, mismatch)
-        logs = run_pass(list(conds), policy, mods, run_seed, mismatch, float(c_req),
-                        pass_id or f"{policy}_s{run_seed}", render=vision,
-                        fixed_setting=fixed_setting, forecaster=fc)
+        base, first_call = sections.started, len(rec.calls)
+        logs = run_pass(list(conds), policy,
+                        dataclasses.replace(mods, model=_CountingModel(mods.model, sections)),
+                        run_seed, mismatch, float(c_req), pass_id or f"{policy}_s{run_seed}",
+                        render=vision, fixed_setting=fixed_setting, forecaster=fc, feedback=learned)
+        # the selection applied in section k is the last call tagged base + k (CLAUDE.md rule 7)
+        selections: list[dict | None] = [None] * len(logs)
+        for tag, _x, _u, info in rec.calls[first_call:]:
+            if tag is not None and 0 <= tag - base < len(logs):
+                selections[tag - base] = info
+        sections.finish()
     finally:
+        rec.tracker = old_tracker
         if lam_set:
-            sel.lam = old_lam
+            inner.lam = old_lam
         for attr, old in saved_opts.items():
             setattr(inner, attr, old)
     if policy == "fast_slow":
@@ -358,7 +611,8 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                       mismatch=mismatch, c_req=float(c_req), lam=lam, modules=mods,
                       records=rec.records, fixed_setting=fixed_setting, used_vision=vision,
                       elapsed_s=time.perf_counter() - t0, meta=meta,
-                      cards=cards if len(cards) == len(logs) and cards else None)
+                      cards=cards if len(cards) == len(logs) and cards else None,
+                      selections=selections)
 
 
 def _parse_nozzle(v) -> tuple[str, str] | str | None:
@@ -396,17 +650,24 @@ def _pass_summary(i: int, logs: Sequence, c_req: float, model, displayed: bool =
 
 
 def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int, mismatch: str,
-                          c_req: float, n_learn: int, forecaster=None) -> tuple[int, list[dict]]:
+                          c_req: float, n_learn: int, forecaster=None, same_field: bool = False,
+                          sections: _Sections | None = None, feedback=None) -> tuple[int, list[dict]]:
     """Slow loop: ``n_learn`` passes (no rendering) through ``run_passes_slow``, then one
     more fit on the last pass so ``mods.model`` is the ResidualCorrectedModel as it stands
-    at the displayed pass. Returns (seed of the displayed pass, summaries of the earlier
-    passes). Mutates only ``mods`` (a private copy), never the cached module stack."""
+    at the displayed pass. Returns (seed of the displayed pass, summaries of the learning
+    passes). Seeds: ``same_field`` -> learning passes ``seed + 1009 i``, i = 1..n_learn, and
+    the displayed pass on ``seed``; otherwise learning passes i = 0..n_learn-1 and the displayed
+    pass on ``seed + 1009 n_learn``. ``sections`` counts the learning passes' sections (the
+    correction is handed to the slow loop inside a counting proxy). Mutates only ``mods`` (a
+    private copy), never the cached module stack."""
     from coverageai.feedback import ResidualCorrectedModel
     corr = ResidualCorrectedModel(mods.model, mods.derive_fn)
     passes: list[dict] = []
+    first = seed + 1009 if same_field else seed
     if n_learn > 0:
-        logs = run_passes_slow(list(conds), mods, seed, mismatch, c_req, n_passes=n_learn,
-                               render=False, correction=corr, forecaster=forecaster)
+        logs = run_passes_slow(list(conds), mods, first, mismatch, c_req, n_passes=n_learn,
+                               render=False, forecaster=forecaster, feedback=feedback,
+                               correction=corr if sections is None else _CountingModel(corr, sections))
         by_pass: dict[int, list] = {}
         for lg in logs:
             by_pass.setdefault(int(lg.extra["slow_pass"]), []).append(lg)
@@ -417,7 +678,7 @@ def _learn_between_passes(mods: Modules, conds: Sequence[Conditions], seed: int,
         last = by_pass[max(by_pass)]
         corr.fit(verified_records(last))
     mods.model = corr
-    return seed + 1009 * n_learn, passes
+    return (seed if same_field else seed + 1009 * n_learn), passes
 
 
 # --------------------------------------------------------------------- KPIs
@@ -510,8 +771,9 @@ def loop_numbers(lg) -> dict[str, float]:
 
     ``feedback_pp`` is the correction applied to this section's prediction, ``error_pp`` what was
     left after it against the actual coverage (panel D), ``card_error_pp`` the same against the
-    card reading (what the controller sees and learns from), ``next_feedback_pp`` the correction
-    after this card."""
+    card reading, ``raw_error_pp`` the card reading minus the model's own prediction (the e_k of
+    eq. 3: this, not the corrected error, is what the fast loop learns from) and
+    ``next_feedback_pp`` the correction after this card."""
     return {
         "predicted": float(lg.pred.coverage_pct),
         "feedback_pp": float(lg.bias),
@@ -520,8 +782,103 @@ def loop_numbers(lg) -> dict[str, float]:
         "actual": float(lg.outcome.coverage_pct),
         "error_pp": float(lg.outcome.coverage_pct - lg.corrected_pred_cov),
         "card_error_pp": float(lg.residual),
+        "raw_error_pp": float(lg.extra.get("raw_residual", lg.meas.coverage_pct - lg.pred.coverage_pct)),
         "next_feedback_pp": float(lg.extra.get("bias_after", lg.bias)),
     }
+
+
+FEEDBACK_POLICIES = ("fast", "fast_slow")       # strategies that correct the model from the cards
+# The trained feedback model (D29) is used by "fast" only. With the learning strategy the slow
+# loop's offset and the model's own starting correction add up and the correction overshoots
+# (adoption check, D31), so "fast_slow" keeps the eq. 3 rule.
+TRAINED_FEEDBACK_POLICIES = ("fast",)
+
+
+def regime_text(regime: str | None) -> str:
+    """Plain words for a fast-loop regime key such as ``"u2-4|coarse"`` ("" if it is not one)."""
+    m = re.fullmatch(r"u([\d.]+)-([\d.]+)\|(\w+)", str(regime or ""))
+    if not m:
+        return ""
+    lo, hi, group = float(m.group(1)), float(m.group(2)), m.group(3)
+    top = float(spec()["feedback"]["regime_bins"]["u_cross_ms"][-1])
+    wind = f"crosswind above {lo:g} m/s" if hi >= top else f"crosswind {lo:g} to {hi:g} m/s"
+    return f"{wind}, {group} droplets"
+
+
+def feedback_rule_text(res: "PassResult | None" = None) -> str:
+    """How the fast loop gets its correction, in one paragraph: the eq. 3 rule with the numbers of
+    ``spec.feedback``, or, for a run with a trained feedback model (D29), what that model is and
+    what it looks at."""
+    fb = spec()["feedback"]
+    kind = (res.meta.get("feedback") or {}) if res is not None else {}
+    if kind.get("kind") == "learned":
+        name = {"xgboost": "XGBoost", "lightgbm": "LightGBM"}.get(kind.get("backend"), "gradient-boosted")
+        size = (f" ({kind['trees']:,} trees, trained on {kind['rows']:,} simulated sections)"
+                if kind.get("trees") and kind.get("rows") else "")
+        return (f"The correction is the prediction of a trained {name} model{size}. It predicts the next "
+                "card's error (card reading minus model prediction) from the section's wind, weather, "
+                "speed, boom height and chosen setting, and from the cards read so far: how many, the "
+                "last errors, their running averages, and what the running-average rule would apply. "
+                f"It is limited to ±{float(fb['bias_clip_pp']):g} pp. It was trained on simulated passes "
+                "with hidden surprises, on seeds kept apart from the ones evaluated.")
+    a = float(fb["alpha"])
+    edges = [float(v) for v in fb["regime_bins"]["u_cross_ms"]]
+    bins = [f"{lo:g} to {hi:g}" for lo, hi in zip(edges[:-2], edges[1:-1])] + [f"above {edges[-2]:g}"]
+    groups = " and ".join(fb["regime_bins"]["droplet_group"])
+    return (f"Each card updates the correction of its group: new correction = {100 * (1 - a):.0f}% of the "
+            f"old one + {100 * a:.0f}% of (card reading minus model prediction), limited to "
+            f"±{float(fb['bias_clip_pp']):g} pp. A group is a crosswind range ({', '.join(bins)} m/s) "
+            f"for {groups} droplets. A group's correction is used once it has "
+            f"{int(fb['warmup_cards'])} cards. A group with no card yet takes "
+            f"{100 * FALLBACK_DAMPING:.0f}% of the field-wide correction.")
+
+
+def feedback_basis(res: "PassResult") -> list[dict]:
+    """For each section, what the feedback correction applied to it rests on.
+
+    ``uses_feedback`` is False for strategies without card feedback. Otherwise ``group`` names the
+    section's regime in plain words, ``cards_before`` counts the earlier cards of this pass in the
+    same regime, and ``source`` says where the applied correction came from: ``"group"`` (that
+    regime's own running correction), ``"field"`` (no card in the regime yet, so a damped share of
+    the pass-wide correction) or ``"none"`` (still warming up, nothing applied). With a trained
+    feedback model (D29) the source is ``"learned"`` and ``cards_before`` counts every earlier card
+    of the pass, because that model looks at all of them. ``text`` is one short line for the page."""
+    uses = res.policy in FEEDBACK_POLICIES
+    learned = (res.meta.get("feedback") or {}).get("kind") == "learned"
+    warm = max(int(spec()["feedback"]["warmup_cards"]), 1)
+    seen: dict[str, int] = {}
+    errors: list[float] = []            # card - model of the earlier sections (what the model saw)
+    out = []
+    for k, lg in enumerate(res.logs):
+        regime = str(lg.extra.get("regime", ""))
+        group = regime_text(regime)
+        n = seen.get(regime, 0)
+        if not uses or not group:
+            out.append({"uses_feedback": False, "group": "", "cards_before": 0, "source": "none",
+                        "text": "This strategy does not use card feedback."})
+            continue
+        if learned:                     # D29: one trained model looks at every earlier card of the pass
+            text = ("trained model, no card yet (its usual starting correction)" if not errors
+                    else f"trained model, {len(errors)} earlier cards (last {errors[-1]:+.1f} pp, "
+                         f"average {float(np.mean(errors)):+.1f} pp)")
+            out.append({"uses_feedback": True, "group": group, "cards_before": len(errors),
+                        "source": "learned", "text": text})
+            errors.append(loop_numbers(lg)["raw_error_pp"])
+            seen[regime] = n + 1
+            continue
+        if n >= warm:
+            source, text = "group", f"{n} earlier cards with {group}"
+        elif n == 0 and k >= warm:
+            source = "field"
+            text = (f"{100 * FALLBACK_DAMPING:.0f}% of the field-wide correction "
+                    f"(no card yet with {group})")
+        else:
+            source = "none"
+            text = f"none yet: needs {warm} cards with {group} (has {n})"
+        out.append({"uses_feedback": True, "group": group, "cards_before": n, "source": source,
+                    "text": text})
+        seen[regime] = n + 1
+    return out
 
 
 def timeseries_frame(logs: Sequence, upto: int | None = None) -> pd.DataFrame:
@@ -538,6 +895,7 @@ def timeseries_frame(logs: Sequence, upto: int | None = None) -> pd.DataFrame:
         "bias": [n["feedback_pp"] for n in nums],
         "bias_after": [n["next_feedback_pp"] for n in nums],
         "residual": [n["card_error_pp"] for n in nums],
+        "raw_error": [n["raw_error_pp"] for n in nums],
         "error": [n["error_pp"] for n in nums],
     })
 
@@ -641,8 +999,8 @@ def run_changes(prev: "PassResult", cur: "PassResult") -> dict:
 def setting_text(u: Setting) -> str:
     """'XR 04 at 40 psi', plus the travel speed / boom height when the controller set them."""
     t = f"{u.family} {u.size} at {u.pressure_psi:g} psi"
-    if u.travel_speed_kmh is not None:
-        t += f", {u.travel_speed_kmh:g} km/h"
+    if u.travel_speed_kmh is not None:      # one decimal: a held rate gives speeds like 15.95 km/h
+        t += f", {_fmt(u.travel_speed_kmh, 1)} km/h"
     if u.boom_height_m is not None:
         t += f", boom {u.boom_height_m:.2f} m"
     return t
@@ -783,7 +1141,7 @@ def replay_card(res: PassResult, k: int, degrade: bool = True) -> CardView:
     loop used, render with the loop's renderer rng, and (if a verifier exists) measure.
     Rendering costs ~0.5-0.7 s, so the UI calls this only for the selected segment."""
     m = res.modules
-    sim = copy.deepcopy(m.simulator)
+    sim = _copy_simulator(m.simulator)
     if hasattr(sim, "begin_pass"):
         sim.begin_pass(res.seed, res.mismatch)
         if res.mismatch != "none":
@@ -793,23 +1151,38 @@ def replay_card(res: PassResult, k: int, degrade: bool = True) -> CardView:
     outcome = sim.simulate(lg.x, lg.u, segment_rng(res.seed, k), res.mismatch,
                            sample_droplets=True)
     consistent = abs(outcome.coverage_pct - lg.outcome.coverage_pct) < 1e-6
-    image, gt = m.renderer.render(outcome, np.random.default_rng([res.seed, k, 1]),
-                                  degrade=degrade)
+    # a shallow copy, as render_cards does, so a run in another session can share the renderer
+    image, gt = copy.copy(m.renderer).render(outcome, np.random.default_rng([res.seed, k, 1]),
+                                             degrade=degrade)
     meas, pred_mask = None, None
-    if m.verifier is not None:
+    v = m.verifier
+    if v is not None:
         ppm = px_per_mm()
-        meas = m.verifier.measure(image, ppm)
-        if hasattr(m.verifier, "segment"):
-            try:
-                try:
-                    seg = m.verifier.segment(image, ppm)
-                except TypeError:          # segment(image) signature (ClassicalVerifier)
-                    seg = m.verifier.segment(image)
-                seg = seg[0] if isinstance(seg, tuple) else seg
-                pred_mask = np.asarray(seg).astype(bool)
-            except Exception:  # overlay is optional
-                pred_mask = None
+        if hasattr(v, "measure_full"):      # image readers B0 / B1: one detection
+            meas, mask, _roi = v.measure_full(image, ppm)
+        else:                               # e.g. the noisy sensor: reading, then its overlay
+            meas = v.measure(image, ppm)
+            mask = _segment_mask(v, image, ppm) if hasattr(v, "segment") else None
+        if mask is not None:
+            pred_mask = np.asarray(mask).astype(bool)
     return CardView(image, np.asarray(gt, bool), pred_mask, outcome, consistent, meas)
+
+
+def _segment_mask(verifier, image: np.ndarray, ppm: float):
+    """Stain mask from ``verifier.segment``, which is ``segment(image)`` on some readers and
+    ``segment(image, px_per_mm)`` on others: the signature decides, so an error raised inside
+    the reader is not mistaken for a signature mismatch."""
+    seg = verifier.segment
+    try:
+        params = list(inspect.signature(seg).parameters.values())
+    except (TypeError, ValueError):         # no introspectable signature: pass both arguments
+        params = None
+    positional = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    takes_ppm = (params is None
+                 or sum(p.kind in positional for p in params) >= 2
+                 or any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params))
+    out = seg(image, ppm) if takes_ppm else seg(image)
+    return out[0] if isinstance(out, tuple) else out
 
 
 def overlay_mask(image: np.ndarray, mask: np.ndarray, color=(255, 64, 64), alpha: float = 0.55,
@@ -836,21 +1209,127 @@ def compare_policies(modules: Modules, conds: Sequence[Conditions], seed: int, m
                      render: bool = False, fixed_setting: Setting | None = None,
                      n_learn: int = N_LEARN_PASSES, speed_control: bool = False,
                      boom_control: bool = False, forecaster: str | None = None,
-                     fixed_nozzle: str | tuple[str, str] | None = None
-                     ) -> dict[str, PassResult]:
-    """Run each policy on the same conditions, seed and hidden mismatch realization. With
-    ``fixed_nozzle="auto"`` the nozzle is chosen once (first policy) and held for all of them."""
+                     fixed_nozzle: str | tuple[str, str] | None = None,
+                     progress: Callable[[int, int], None] | None = None,
+                     feedback_model: Any = None) -> dict[str, PassResult]:
+    """Run each policy on the same conditions, seed and hidden mismatch realization (fast_slow
+    included: its displayed pass runs on ``seed``, its learning passes on later seeds, see
+    ``run_pass_wrapper(same_field=True)``). With ``fixed_nozzle="auto"`` the nozzle is chosen
+    once (first policy) and held for all of them. ``progress(done, total)`` is called after each
+    policy run with ``total = len(policies)``. Holds ``_STACK_LOCK`` for the whole comparison."""
     out = {}
-    for p in policies:
-        out[p] = run_pass_wrapper(modules, conds, p, seed, mismatch, c_req, lam,
-                                  fixed_setting=fixed_setting if p == "best_fixed" else None,
-                                  render=render, n_learn=n_learn, speed_control=speed_control,
-                                  boom_control=boom_control, forecaster=forecaster,
-                                  fixed_nozzle=fixed_nozzle)
-        nz = out[p].meta["nozzle"]
-        if fixed_nozzle == "auto" and nz.get("family"):
-            fixed_nozzle = (nz["family"], nz["size"])
+    with _STACK_LOCK:
+        for i, p in enumerate(policies):
+            out[p] = run_pass_wrapper(modules, conds, p, seed, mismatch, c_req, lam,
+                                      fixed_setting=fixed_setting if p == "best_fixed" else None,
+                                      render=render, n_learn=n_learn, speed_control=speed_control,
+                                      boom_control=boom_control, forecaster=forecaster,
+                                      fixed_nozzle=fixed_nozzle, same_field=True,
+                                      feedback_model=feedback_model)
+            nz = out[p].meta["nozzle"]
+            if fixed_nozzle == "auto" and nz.get("family"):
+                fixed_nozzle = (nz["family"], nz["size"])
+            if progress is not None:
+                progress(i + 1, len(policies))
     return out
+
+
+SEED_COLUMNS = ["seed", "policy", "met_pct", "shortfall_pp", "volume_gpa", "drift_pct",
+                "n_retreat", "n_infeasible"]
+
+
+def compare_seeds(modules: Modules, preset: str, seeds: Sequence[int], mismatch: str,
+                  c_req: float, lam: float | None = None,
+                  policies: Sequence[str] = ("open", "fast", "fast_slow", "oracle"),
+                  render: bool = False, n_learn: int = N_LEARN_PASSES,
+                  speed_control: bool = False, boom_control: bool = False,
+                  forecaster: str | None = None,
+                  fixed_nozzle: str | tuple[str, str] | None = None,
+                  progress: Callable[[int, int], None] | None = None,
+                  feedback_model: Any = None) -> dict:
+    """``compare_policies`` on several seeds, each an independent field: its own conditions
+    (``make_conditions(preset, seed)``), its own best-fixed setting (if that policy is asked
+    for) and, with ``fixed_nozzle="auto"``, its own held nozzle. Every policy runs on every
+    seed, so the per-seed rows are paired by seed.
+
+    Returns ``{"seeds", "policies", "per_seed", "first"}``: ``per_seed`` has one row per (seed,
+    policy) with ``SEED_COLUMNS`` (met in percent of sections and drift in percent of sprayed
+    volume, both from ``loop.summarize`` on the true outcome, as ``comparison_table``);
+    ``first`` holds the full ``PassResult``s of the first seed only. ``progress(done, total)``
+    is called after each (seed, policy) run, ``total = len(seeds) * len(policies)``. One seed
+    gives the numbers of ``comparison_table(compare_policies(...))`` on that seed."""
+    seeds, policies = [int(s) for s in seeds], list(policies)
+    if not seeds or not policies:
+        raise ValueError("compare_seeds needs at least one seed and one policy")
+    total = len(seeds) * len(policies)
+    rows: list[dict] = []
+    first: dict[str, PassResult] = {}
+    with _STACK_LOCK:
+        for i, s in enumerate(seeds):
+            conds = make_conditions(preset, s)
+            fixed = best_fixed_for(modules, conds, float(c_req)) if "best_fixed" in policies else None
+            hook = None if progress is None else (
+                lambda d, _t, off=i * len(policies): progress(off + d, total))
+            res = compare_policies(modules, conds, s, mismatch, c_req, lam, policies,
+                                   render=render, fixed_setting=fixed, n_learn=n_learn,
+                                   speed_control=speed_control, boom_control=boom_control,
+                                   forecaster=forecaster, fixed_nozzle=fixed_nozzle,
+                                   progress=hook, feedback_model=feedback_model)
+            for p, r in res.items():
+                sm = summarize(r.logs, r.c_req)
+                rows.append({"seed": s, "policy": p, "met_pct": 100.0 * sm["frac_met"],
+                             "shortfall_pp": sm["mean_shortfall_pp"],
+                             "volume_gpa": sm["mean_volume_gpa"],
+                             "drift_pct": 100.0 * sm["mean_drift_frac"],
+                             "n_retreat": sm["n_retreat"], "n_infeasible": sm["n_infeasible"]})
+            if i == 0:
+                first = res
+    return {"seeds": seeds, "policies": policies,
+            "per_seed": pd.DataFrame(rows, columns=SEED_COLUMNS), "first": first}
+
+
+_CI_METRICS = (("met", "met_pct"), ("volume", "volume_gpa"), ("drift", "drift_pct"))
+
+
+def comparison_stats(per_seed: pd.DataFrame, reference: str | None = None,
+                     n_boot: int = 2000, rng_seed: int = 0) -> pd.DataFrame:
+    """One row per policy (order of first appearance in ``per_seed``, a ``compare_seeds``
+    frame): means over seeds of met / volume / drift with 95 % percentile-bootstrap bounds over
+    seeds (``_lo`` / ``_hi``, NaN with fewer than 2 seeds), and the means of shortfall, retreat
+    flags and infeasible sections. With ``reference`` naming a present policy, also
+    ``d_met_pp``: the mean over seeds of (met_pct - the reference's met_pct on the same seed),
+    with a paired-bootstrap 95 % CI (``d_met_lo`` / ``d_met_hi``; seeds are resampled with
+    their pairs kept together). The difference is NaN on the reference row; its bounds are NaN
+    with fewer than 2 shared seeds. Each metric uses its own generator seeded by ``rng_seed``,
+    so every policy is resampled with the same seed indices and the result is deterministic."""
+    from coverageai.stats import bootstrap_mean_ci, paired_bootstrap_mean_ci
+    pols = list(dict.fromkeys(per_seed["policy"]))
+    paired = reference is not None and reference in pols
+    ref = (per_seed[per_seed["policy"] == reference].set_index("seed")["met_pct"]
+           if paired else None)
+    nan = float("nan")
+    rows = []
+    for p in pols:
+        d = per_seed[per_seed["policy"] == p]
+        row: dict[str, Any] = {"policy": p, "n_seeds": int(d["seed"].nunique())}
+        for j, (short, col) in enumerate(_CI_METRICS):
+            m, lo, hi = bootstrap_mean_ci(d[col].to_numpy(float), n_boot,
+                                          np.random.default_rng([int(rng_seed), j]))
+            row[col], row[f"{short}_lo"], row[f"{short}_hi"] = m, lo, hi
+        for col in ("shortfall_pp", "n_retreat", "n_infeasible"):
+            row[col] = float(d[col].mean())
+        if paired:
+            if p == reference:
+                row.update(d_met_pp=nan, d_met_lo=nan, d_met_hi=nan)
+            else:
+                own = d.set_index("seed")["met_pct"]
+                common = [s for s in own.index if s in ref.index]
+                m, lo, hi = paired_bootstrap_mean_ci(
+                    own.loc[common].to_numpy(float), ref.loc[common].to_numpy(float), n_boot,
+                    np.random.default_rng([int(rng_seed), len(_CI_METRICS)]))
+                row.update(d_met_pp=m, d_met_lo=lo, d_met_hi=hi)
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def comparison_table(results: dict[str, PassResult]) -> pd.DataFrame:

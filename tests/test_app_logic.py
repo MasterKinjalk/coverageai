@@ -180,13 +180,17 @@ def test_noisy_verifier_replay_card():
     assert abs(cv.meas.coverage_pct - cv.outcome.coverage_pct) < 8.0
 
 
-def test_fast_slow_runs_learning_passes_and_replays():
+@pytest.mark.parametrize("same_field", [False, True])
+def test_fast_slow_runs_learning_passes_and_replays(same_field):
     mods = al.build_modules_adapter("oracle_nominal", "perfect")
     conds = al.make_conditions("gusty_afternoon", 3, n_segments=6)
     orig_model = mods.model
-    r = al.run_pass_wrapper(mods, conds, "fast_slow", 3, "high", 30.0, n_learn=2)
+    r = al.run_pass_wrapper(mods, conds, "fast_slow", 3, "high", 30.0, n_learn=2,
+                            same_field=same_field)
     assert mods.model is orig_model                       # cached stack untouched
-    assert r.policy == "fast_slow" and r.seed == 3 + 1009 * 2   # last pass is the one returned
+    # same_field: the displayed pass is on the given seed, the learning passes on later seeds;
+    # default (legacy): the learning passes come first and the last pass is the one returned
+    assert r.policy == "fast_slow" and r.seed == (3 if same_field else 3 + 1009 * 2)
     assert all(lg.policy == "fast_slow" and lg.seed == r.seed for lg in r.logs)
     assert type(r.modules.model).__name__ == "ResidualCorrectedModel"
     assert r.modules.model.n_records == 2 * len(conds)
@@ -195,7 +199,218 @@ def test_fast_slow_runs_learning_passes_and_replays():
     assert all(0 <= p["met_pct"] <= 100 and p["mean_error_pp"] >= 0 for p in ps)
     for k in (0, 4):
         assert al.replay_card(r, k).consistent
-    assert al.run_pass_wrapper(mods, conds, "fast_slow", 3, "high", 30.0, n_learn=0).seed == 3
+    assert al.run_pass_wrapper(mods, conds, "fast_slow", 3, "high", 30.0, n_learn=0,
+                               same_field=same_field).seed == 3
+
+
+def _realized_wind(res):
+    return [lg.extra["fc_realized_wind_ms"] for lg in res.logs]
+
+
+def test_fast_slow_same_field_sees_the_same_hidden_realization(modules):
+    """With ``same_field`` the displayed fast_slow pass gets the same gusts, canopy and wear as
+    the other policies on that seed. The realized wind depends only on the hidden draws, not on
+    the chosen setting, so it must match the open pass section by section."""
+    conds = al.make_conditions("gusty_afternoon", 5, n_segments=8)
+    kw = dict(lam=0.6, forecaster="ar1", n_learn=1)
+    op = al.run_pass_wrapper(modules, conds, "open", 5, "high", 30.0, **kw)
+    fs = al.run_pass_wrapper(modules, conds, "fast_slow", 5, "high", 30.0, same_field=True, **kw)
+    assert fs.seed == op.seed == 5
+    assert _realized_wind(fs) == _realized_wind(op)
+    old = al.run_pass_wrapper(modules, conds, "fast_slow", 5, "high", 30.0, **kw)
+    assert _realized_wind(old) != _realized_wind(op)       # the check is not vacuous
+    # the outcome of a forced-equal setting is the same too: best_fixed on that seed with the
+    # displayed pass's first setting reproduces its first section's coverage
+    bf = al.run_pass_wrapper(modules, conds[:1], "best_fixed", 5, "high", 30.0,
+                             fixed_setting=fs.logs[0].u)
+    assert bf.logs[0].outcome.coverage_pct == fs.logs[0].outcome.coverage_pct
+
+
+def test_compare_policies_fast_slow_on_the_same_field(modules):
+    conds = al.make_conditions("gusty_afternoon", 2, n_segments=5)
+    res = al.compare_policies(modules, conds, 2, "med", 30.0, policies=("open", "fast_slow"),
+                              n_learn=1)
+    assert res["fast_slow"].seed == res["open"].seed == 2
+
+
+# ------------------------------------- selector records with a wind forecast (info_for)
+
+def _top_setting(info) -> Setting:
+    import dataclasses
+    return Setting(**{f.name: info["top"][0][f.name] for f in dataclasses.fields(Setting)})
+
+
+@pytest.mark.parametrize("policy", ["open", "fast", "fast_slow"])
+def test_info_for_with_forecaster_is_the_applied_selection(modules, policy):
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
+    r = al.run_pass_wrapper(modules, conds, policy, 4, "high", 30.0, 0.6, forecaster="ar1",
+                            n_learn=1)
+    for k, lg in enumerate(r.logs):
+        info = r.info_for(k)
+        assert info is not None, k
+        assert _top_setting(info) == lg.u
+        if policy != "open":    # rule 7: the record of the final selection, not the first one
+            assert info["bias"] == lg.extra["selection_bias"]
+
+
+@pytest.mark.parametrize("policy", ["open", "fast", "fast_slow", "oracle"])
+def test_info_for_without_forecaster_is_unchanged(modules, policy):
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
+    r = al.run_pass_wrapper(modules, conds, policy, 4, "high", 30.0, 0.6, n_learn=1)
+    for k, lg in enumerate(r.logs):
+        assert r.info_for(k) is r.records[(lg.x, lg.u)]
+    bf = al.run_pass_wrapper(modules, conds, "best_fixed", 4, "high", 30.0)
+    assert all(bf.info_for(k) is None for k in range(bf.n))
+
+
+# ---------------------------------------------------------------- progress hook
+
+@pytest.mark.parametrize("policy, n_learn", [("fast", 0), ("best_fixed", 0), ("fast_slow", 2)])
+def test_progress_hook_counts_sections_and_changes_nothing(modules, policy, n_learn):
+    def digest(logs):
+        return [(lg.u, lg.pred, lg.outcome.coverage_pct, lg.outcome.drift_frac,
+                 lg.meas.coverage_pct, lg.bias, lg.flagged_retreat, lg.selector_infeasible)
+                for lg in logs]
+
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=6)
+    calls = []
+    a = al.run_pass_wrapper(modules, conds, policy, 4, "high", 30.0, 0.6, n_learn=n_learn)
+    b = al.run_pass_wrapper(modules, conds, policy, 4, "high", 30.0, 0.6, n_learn=n_learn,
+                            progress=lambda d, t: calls.append((d, t)))
+    assert digest(a.logs) == digest(b.logs)
+    total = len(conds) * (n_learn + 1 if policy == "fast_slow" else 1)
+    assert calls[-1] == (total, total)
+    assert len(calls) >= total and all(t == total for _, t in calls)
+    assert [d for d, _ in calls] == sorted(d for d, _ in calls)
+
+
+def test_progress_hook_error_propagates_and_selector_is_restored(modules):
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=6)
+    before = (*_selector_state(modules.selector), modules.selector.nozzle_lock)
+
+    def boom(done, total):
+        if done == 3:
+            raise RuntimeError("stop")
+
+    with pytest.raises(RuntimeError, match="stop"):
+        al.run_pass_wrapper(modules, conds, "fast", 4, "high", 30.0, 0.1, speed_control=True,
+                            fixed_nozzle="auto", progress=boom)
+    assert (*_selector_state(modules.selector), modules.selector.nozzle_lock) == before
+
+
+def test_stack_lock_is_reentrant():
+    assert al._STACK_LOCK.acquire(blocking=False)
+    try:
+        assert al._STACK_LOCK.acquire(blocking=False)     # RLock: same thread may re-enter
+        al._STACK_LOCK.release()
+    finally:
+        al._STACK_LOCK.release()
+
+
+# ------------------------------------------------------- card thumbnails and replay
+
+def test_card_thumb_size_and_type():
+    import base64
+
+    import cv2
+    rng = np.random.default_rng(0)
+    img = rng.integers(0, 255, (900, 1400, 3), dtype=np.uint8)
+    mask = rng.random((900, 1400)) < 0.3
+    for m in (None, mask):
+        s = al.card_thumb(img, m)
+        assert isinstance(s, str)
+        out = cv2.imdecode(np.frombuffer(base64.b64decode(s), np.uint8), cv2.IMREAD_COLOR)
+        assert out.shape == (int(900 * al.CARD_THUMB_W / 1400), al.CARD_THUMB_W, 3)
+    # a fully stained card is tinted toward the overlay color
+    red = cv2.imdecode(np.frombuffer(base64.b64decode(
+        al.card_thumb(np.zeros_like(img), np.ones(mask.shape, bool))), np.uint8), cv2.IMREAD_COLOR)
+    assert red[..., 2].mean() > 100 and red[..., 0].mean() < 60       # BGR: red high, blue low
+
+
+def test_replay_card_reads_once_with_measure_full():
+    mods = al.build_modules_adapter("oracle_nominal", "b0")
+    conds = al.make_conditions("gusty_afternoon", 4, n_segments=2)
+    r = al.run_pass_wrapper(mods, conds, "fast", 4, "med", 30.0)
+    calls = {"measure_full": 0, "measure": 0, "segment": 0}
+    v = mods.verifier
+    orig = {name: getattr(v, name) for name in calls}
+
+    def spy(name):
+        def f(*a, **k):
+            calls[name] += 1
+            return orig[name](*a, **k)
+        return f
+
+    for name in calls:
+        setattr(v, name, spy(name))
+    try:
+        cv = al.replay_card(r, 1)
+    finally:
+        for name in calls:
+            delattr(v, name)
+    assert calls == {"measure_full": 1, "measure": 0, "segment": 0}
+    assert cv.pred_mask is not None and cv.pred_mask.dtype == bool
+    assert abs(cv.meas.coverage_pct - r.logs[1].meas.coverage_pct) < 1e-6
+
+
+def test_replay_card_does_not_hide_reader_errors(short_pass):
+    class BadReader:
+        def measure(self, image, px_per_mm):
+            return None
+
+        def segment(self, image, px_per_mm=None):
+            raise RuntimeError("reader broke")
+
+    import dataclasses
+    res = dataclasses.replace(short_pass, modules=dataclasses.replace(short_pass.modules,
+                                                                      verifier=BadReader()))
+    with pytest.raises(RuntimeError, match="reader broke"):
+        al.replay_card(res, 0)
+
+
+def test_ensure_cards_explains_why_there_are_none(short_pass):
+    import dataclasses
+    res = dataclasses.replace(short_pass, cards=None, meta={},
+                              modules=dataclasses.replace(short_pass.modules, renderer=None))
+    assert al.ensure_cards(res) is None
+    note = res.meta["cards_note"]
+    assert isinstance(note, str) and note and "_" not in note
+    # a renderer that fails: None, a note for the page, and the error kept for debugging
+    class NoDroplets:
+        def render(self, outcome, rng, degrade=True):
+            raise ValueError("outcome has no droplets")
+
+    bad = dataclasses.replace(short_pass, cards=None, meta={},
+                              modules=dataclasses.replace(short_pass.modules, renderer=NoDroplets()))
+    assert al.ensure_cards(bad) is None
+    assert bad.meta["cards_note"] and "_" not in bad.meta["cards_note"]
+    assert "no droplets" in bad.meta["cards_error"]
+
+
+def test_concurrent_runs_do_not_mix_selector_state(modules):
+    """Two sessions sharing the cached stack at once: each run must equal the same run alone."""
+    import threading
+    conds = al.make_conditions("gusty_afternoon", 6, n_segments=6)
+    jobs = {"a": dict(lam=0.05, speed_control=True), "b": dict(lam=0.95, fixed_nozzle="XR-04")}
+    alone = {k: al.run_pass_wrapper(modules, conds, "fast", 6, "high", 30.0, **kw)
+             for k, kw in jobs.items()}
+    got, errors = {}, []
+
+    def work(k):
+        try:
+            got[k] = al.run_pass_wrapper(modules, conds, "fast", 6, "high", 30.0, **jobs[k])
+        except Exception as exc:     # surfaced below
+            errors.append(exc)
+
+    ts = [threading.Thread(target=work, args=(k,)) for k in jobs for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors
+    for k in jobs:
+        assert [lg.u for lg in got[k].logs] == [lg.u for lg in alone[k].logs]
+    assert modules.selector.nozzle_lock is None and modules.selector.speed_options_kmh == []
 
 
 def test_app_policies_all_run_and_oracle_card_in_compare(modules):

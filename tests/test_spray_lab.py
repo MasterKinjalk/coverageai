@@ -175,10 +175,9 @@ def test_wind_direction_mapping():
 
 
 def test_coverage_rating_and_labels():
-    assert sl.coverage_rating(35, 30) == ("acceptable", "Good")
-    assert sl.coverage_rating(20, 30) == ("marginal", "Borderline")
-    assert sl.coverage_rating(10, 30) == ("critical", "Poor")
-    assert sl.coverage_rating(45, 50)[1] == "Borderline"
+    assert sl.coverage_rating(35) == ("acceptable", "Good")
+    assert sl.coverage_rating(20) == ("marginal", "Borderline")
+    assert sl.coverage_rating(10) == ("critical", "Poor")
     assert sl.droplet_class_name("XC") == "Extremely coarse"
     from coverageai import catalog
     assert set(catalog.families()) <= set(sl.FAMILY_INFO)
@@ -205,8 +204,12 @@ SCRIPT = f"""
 import sys
 sys.path.insert(0, {str(APP_DIR)!r})
 import streamlit as st
-from spray_lab_view import render_spray_lab
-render_spray_lab()
+import ui
+import spray_lab_view as v
+ui.inject_css()
+with st.sidebar:
+    u, x, t = v.lab_controls()
+v.render_nozzle_lab(u, x, t)
 """
 
 
@@ -218,27 +221,61 @@ def test_html_template_has_payload_slot():
     assert "http://" not in html and "https://" not in html      # no network dependencies
 
 
-def test_ui_start_simulation_smoke():
+def test_ui_smoke_no_run_button():
     at = AppTest.from_string(SCRIPT, default_timeout=120)
     at.run()
     assert not at.exception, at.exception
-    for w in [*at.selectbox, *at.slider, *at.button]:
+    for w in [*at.selectbox, *at.slider]:
         assert w.key is None or str(w.key).startswith("lab_"), w.key
-    btn = next(b for b in at.button if b.label == "Start simulation")
-    btn.click().run()
-    assert not at.exception, at.exception
-    res = at.session_state["lab_result"]
-    assert isinstance(res, sl.LabResult)
-    # changing a control flags stale results without crashing
+    assert not at.button
+    labels = {w.label for w in [*at.selectbox, *at.slider]}
+    assert {"Nozzle type", "Nozzle size", "Pressure (psi)", "Wind speed (m/s)", "Wind direction",
+            "Air temperature (°C)", "Relative humidity (%)", "Travel speed (km/h)",
+            "Boom height (m)", "Target coverage (%)"} <= labels
+    assert not at.warning and not at.info
     at.slider(key="lab_wind").set_value(6.0).run()
     assert not at.exception, at.exception
-    assert any("changed the settings" in w.value for w in at.warning)
-    # switch nozzle family (size / pressure widgets are re-keyed per nozzle)
-    at.selectbox(key="lab_family").set_value("ULD").run()
+    at.selectbox(key="lab_family").set_value("ULD").run()    # size and pressure widgets are re-keyed
     assert not at.exception, at.exception
-    next(b for b in at.button if b.label == "Start simulation").click().run()
-    assert not at.exception, at.exception
-    assert at.session_state["lab_result"].setting.family == "ULD"
+
+
+def _nominal_point(u, x):
+    from coverageai.app_logic import nozzle_point
+    return nozzle_point(u, x)["pred"]
+
+
+@pytest.mark.parametrize("u,x", [(Setting("XR", "04", 40.0), cond(3.0, 90.0, 25.0, 55.0, 16.0, 0.5)),
+                                 (COARSE, cond(5.0, 135.0, 32.0, 30.0, 10.0, 0.7)),
+                                 (FINE, cond(0.0))])
+def test_lab_numbers_equal_nozzle_curves(u, x):
+    """Coverage and drift in the lab are the noise-free model values, whatever the seed."""
+    from coverageai.app_logic import coverage_vs_pressure, drift_vs_wind
+    pred = _nominal_point(u, x)
+    for seed in (0, 7, 123):
+        r = sl.run_lab(u, x, seed=seed, render_card=False)
+        assert r.outcome.coverage_pct == pytest.approx(pred.coverage_pct, abs=1e-9)
+        assert r.outcome.drift_frac == pytest.approx(pred.drift_frac, abs=1e-9)
+    # the curves pass through the same point
+    cvp = coverage_vs_pressure(u.family, u.size, x)
+    assert np.interp(u.pressure_psi, cvp["pressure_psi"], cvp["coverage_pct"]) == pytest.approx(
+        pred.coverage_pct, abs=0.3)
+    dvw = drift_vs_wind(u, x)
+    uc = abs(r.derived.u_cross_ms)
+    assert np.interp(uc, dvw["wind_ms"], dvw["drift_frac"]) == pytest.approx(pred.drift_frac, abs=0.01)
+
+
+def test_class_uses_fixed_spec_limits_not_target():
+    from coverageai.config import spec
+    c = spec()["coverage_classes"]
+    r = lab(FINE, target_pct=5.0)
+    r2 = lab(FINE, target_pct=60.0)
+    assert r.rating_key == r2.rating_key == sl.coverage_rating(r.outcome.coverage_pct)[0]
+    assert sl.coverage_rating(c["acceptable_min"])[0] == "acceptable"
+    assert sl.coverage_rating(c["marginal_min"])[0] == "marginal"
+    assert sl.coverage_rating(c["marginal_min"] - 0.01)[0] == "critical"
+    assert r.target_met == (r.outcome.coverage_pct >= 5.0)
+    assert r2.target_met == (r2.outcome.coverage_pct >= 60.0)
+
 
 
 # ------------------------------------------------------------------ companion figure data

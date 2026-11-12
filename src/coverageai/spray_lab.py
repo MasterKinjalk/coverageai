@@ -123,15 +123,15 @@ def family_label(fam: str) -> str:
     return FAMILY_INFO.get(fam, {}).get("name", fam)
 
 
-def coverage_rating(coverage_pct: float, target_pct: float) -> tuple[str, str]:
-    """(class key, plain label) relative to the user's target coverage.
+def coverage_rating(coverage_pct: float) -> tuple[str, str]:
+    """(class key, plain label) using the fixed class limits of ``config/spec.yaml``.
 
-    Same rule as the project spec (acceptable >= 30 %, marginal >= 15 %) with the
-    thresholds scaled to the target: Good >= target, Borderline >= target * 15/30.
+    The card reader and the field replay use the same limits (Good >= ``acceptable_min``,
+    Borderline >= ``marginal_min``). The user's target coverage is a separate goal; see
+    ``LabResult.target_met``.
     """
     cls = spec()["coverage_classes"]
-    ratio = float(cls["marginal_min"]) / float(cls["acceptable_min"])
-    key = coverage_class(coverage_pct, target_pct, target_pct * ratio)
+    key = coverage_class(coverage_pct, float(cls["acceptable_min"]), float(cls["marginal_min"]))
     return key, COVERAGE_NAMES[key]
 
 
@@ -165,6 +165,10 @@ class LabResult:
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def target_met(self) -> bool:
+        return bool(self.outcome.coverage_pct >= self.target_pct)
+
+    @property
     def drift_pct(self) -> float:
         return 100.0 * self.outcome.drift_frac
 
@@ -175,9 +179,17 @@ class LabResult:
 
 # ------------------------------------------------------------------ physics helpers
 
-def _sim():
+def nominal_simulator():
+    """The simulator with the spread factor fixed at the middle of its range.
+
+    The default simulator draws the spread factor from a range for every call. That draw is
+    hidden noise, so two calls with the same inputs can differ by a few points of coverage.
+    The lab shows the noise-free value, which is the same one ``app_logic.NominalSimModel``
+    returns for the nozzle curves.
+    """
     from coverageai.simulator import SpraySimulator
-    return SpraySimulator()
+    mid = float(np.mean(spec()["physics"]["spread_factor"]))
+    return SpraySimulator(physics_overrides={"spread_factor": [mid, mid]})
 
 
 def _phys():
@@ -395,11 +407,11 @@ def run_lab(setting: Setting, conditions: Conditions, seed: int = 0, n_nozzles: 
     """Simulate one setting under one set of conditions (no hidden mismatch).
 
     The analytic outcome comes from ``SpraySimulator.simulate(..., mismatch="none",
-    sample_droplets=True)`` with ``default_rng(seed)``; the card is rendered from its
-    sampled droplets (clean scan, no photo degradation).
+    sample_droplets=True)`` on ``nominal_simulator()`` (fixed spread factor, so the numbers
+    equal the nozzle curves); ``seed`` only places the droplets on the card, which is
+    rendered clean (no photo degradation).
     """
-    from coverageai.simulator import SpraySimulator
-    sim = SpraySimulator()
+    sim = nominal_simulator()
     derived = sim.derive_fn(conditions, setting)
     target = float(spec()["c_req_pct"] if target_pct is None else target_pct)
     rng = np.random.default_rng(int(seed))
@@ -412,9 +424,10 @@ def run_lab(setting: Setting, conditions: Conditions, seed: int = 0, n_nozzles: 
 
     payload, tally = sample_particles(bins, conditions, setting, derived, n_nozzles,
                                       n_particles, np.random.default_rng([int(seed), 7]))
-    key, label = coverage_rating(outcome.coverage_pct, target)
+    key, label = coverage_rating(outcome.coverage_pct)
     payload["summary"] = {
-        "coverage": outcome.coverage_pct, "target": target, "rating": label, "ratingKey": key,
+        "coverage": outcome.coverage_pct, "target": target,
+        "targetMet": bool(outcome.coverage_pct >= target), "rating": label, "ratingKey": key,
         "drift": 100.0 * outcome.drift_frac, "landed": 100.0 * fate["landed"],
         "blown": 100.0 * fate["blown"], "evaporated": 100.0 * fate["evaporated"],
         "dropletClass": droplet_class_name(derived.droplet_class),

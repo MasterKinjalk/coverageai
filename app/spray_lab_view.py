@@ -1,12 +1,15 @@
-"""Spray lab tab: pick a nozzle and weather, watch the spray, read the results.
+"""Nozzle lab: one nozzle, one set of weather, one set of numbers.
 
 Usage from the main app (``app/`` must be on sys.path, as main.py already does):
 
-    from spray_lab_view import render_spray_lab
-    with tab_lab:
-        render_spray_lab()
+    from spray_lab_view import lab_controls, render_nozzle_lab
+    with st.sidebar:
+        u, x, target = lab_controls()
+    render_nozzle_lab(u, x, target)
 
-Every widget key starts with ``lab_``. The result is kept in ``st.session_state["lab_result"]``.
+Every widget key starts with ``lab_``. The simulation takes about 0.2 s, so it runs on every
+change and is cached on the inputs. The headline numbers, the curves and the animation tally
+all come from the same noise-free simulator (``spray_lab.nominal_simulator``).
 """
 from __future__ import annotations
 
@@ -17,37 +20,19 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import charts
+import ui
 from field_run_view import embed_html
 from coverageai import catalog
 from coverageai import spray_lab as sl
-from coverageai.app_logic import nozzle_pressure_bounds
+from coverageai.app_logic import (coverage_grid, coverage_vs_pressure, drift_vs_wind,
+                                  nozzle_pressure_bounds, pattern_overlap)
 from coverageai.config import spec
-from coverageai.contracts import Setting
+from coverageai.contracts import Conditions, Setting
 from coverageai.units import gpa_to_lha
 
 _HTML_PATH = Path(__file__).resolve().parent / "static_spray_lab.html"
-_BADGE = {"acceptable": "#3ddc97", "marginal": "#f5b942", "critical": "#ef5b5b"}
-_SEED = 7
-
-_CSS = """
-<style>
-.labkpi {background:#161b22; border:1px solid #2b3340; border-radius:10px; padding:10px 14px; height:100%;}
-.labkpi .l {color:#8a94a6; font-size:0.74rem; text-transform:uppercase; letter-spacing:0.6px;}
-.labkpi .v {color:#e6edf3; font-size:1.6rem; font-weight:650; line-height:1.2;}
-.labkpi .s {color:#8a94a6; font-size:0.8rem;}
-.labbadge {display:inline-block; padding:1px 9px; border-radius:999px; font-size:0.75rem;
-           font-weight:650; color:#0e1117; margin-left:6px; vertical-align:middle;}
-</style>
-"""
-
-
-def _kpi(col, label: str, value: str, sub: str = "") -> None:
-    col.markdown(f'<div class="labkpi"><div class="l">{label}</div><div class="v">{value}</div>'
-                 f'<div class="s">{sub}&nbsp;</div></div>', unsafe_allow_html=True)
-
-
-def _pct(v: float) -> str:
-    return "<1%" if 0 < v < 1 else f"{v:.0f}%"
+_SEED = 7          # places droplets on the card and in the animation; it does not change any number
 
 
 def _size_label(fam: str, size: str) -> str:
@@ -60,76 +45,124 @@ def _size_label(fam: str, size: str) -> str:
 
 # ------------------------------------------------------------------ controls
 
-def _controls():
+def _default(key: str, value) -> str:
+    """Seed a widget's value once and return its key. The app re-assigns every ``lab_`` key on each
+    run so the lab's inputs survive a visit to another view; a widget whose key is set that way
+    must not also pass a default value, so the default goes here."""
+    st.session_state.setdefault(key, value)
+    return key
+
+
+def lab_controls() -> tuple[Setting, Conditions, float]:
+    """Render the lab's input widgets into the current container (main.py calls this inside
+    ``with st.sidebar:``) and return (setting, conditions, target coverage %)."""
     r = spec()["ranges"]
-    c1, c2, c3 = st.columns(3, gap="large")
-    with c1:
-        st.markdown("**Nozzle**")
-        fams = catalog.families()
-        fam = st.selectbox("Nozzle type", fams, index=fams.index("XR") if "XR" in fams else 0,
-                           format_func=sl.family_label, key="lab_family")
-        st.caption(sl.FAMILY_INFO.get(fam, {}).get("desc", ""))
-        sizes = catalog.sizes(fam)
-        size = st.selectbox("Nozzle size (bigger number = more flow)", sizes,
-                            index=min(len(sizes) // 2, len(sizes) - 1),
-                            format_func=lambda s: _size_label(fam, s), key=f"lab_size_{fam}")
-        lo, hi = nozzle_pressure_bounds(fam, size)
-        pressure = st.slider("Spray pressure (psi)", float(lo), float(hi),
-                             float(min(max(40.0, lo), hi)), step=1.0,
-                             key=f"lab_pressure_{fam}_{size}",
-                             help="Higher pressure gives more flow and smaller droplets.")
-    with c2:
-        st.markdown("**Weather**")
-        wind = st.slider("Wind speed (m/s)", float(r["wind_speed_ms"][0]), float(r["wind_speed_ms"][1]),
-                         3.0, step=0.1, key="lab_wind",
-                         help="1 m/s is about 2.2 mph. Spraying is not allowed above about 6.7 m/s (15 mph).")
-        wdir = st.selectbox("Wind direction (relative to the sprayer)", list(sl.WIND_DIRECTIONS),
-                            index=0, key="lab_wind_dir",
-                            help="Only the sideways (crosswind) part of the wind carries droplets off "
-                                 "the sprayed strip in this simulation.")
-        temp = st.slider("Air temperature (°C)", float(r["temp_c"][0]), float(r["temp_c"][1]), 25.0,
-                         step=0.5, key="lab_temp")
-        rh = st.slider("Relative humidity (%)", float(r["rh_pct"][0]), float(r["rh_pct"][1]), 50.0,
-                       step=1.0, key="lab_rh", help="Dry, hot air makes small droplets evaporate faster.")
-    with c3:
-        st.markdown("**Sprayer and goal**")
-        speed = st.slider("Travel speed (km/h)", float(r["travel_speed_kmh"][0]),
-                          float(r["travel_speed_kmh"][1]), 12.0, step=0.5, key="lab_speed",
-                          help="Driving faster spreads the same flow over more ground (lower rate per acre).")
-        height = st.slider("Boom height above the target (m)", float(r["boom_height_m"][0]),
-                           float(r["boom_height_m"][1]), 0.50, step=0.01, key="lab_height",
-                           help="Higher booms give droplets more time in the air to drift and evaporate.")
-        target = st.slider("Target coverage (%)", 5.0, 60.0, float(spec()["c_req_pct"]), step=1.0,
-                           key="lab_target",
-                           help="Share of the water-sensitive paper card that should turn blue.")
+    ui.group("Nozzle")
+    fams = catalog.families()
+    fam = st.selectbox("Nozzle type", fams, key=_default("lab_family", "XR" if "XR" in fams else fams[0]),
+                       format_func=sl.family_label,
+                       help=" ".join(f"{sl.family_label(f)}: {sl.FAMILY_INFO.get(f, {}).get('desc', '')}"
+                                     for f in fams))
+    sizes = catalog.sizes(fam)
+    size = st.selectbox("Nozzle size", sizes, format_func=lambda v: _size_label(fam, v),
+                        key=_default(f"lab_size_{fam}", "04" if "04" in sizes else sizes[len(sizes) // 2]),
+                        help="A bigger number means more flow.")
+    lo, hi = nozzle_pressure_bounds(fam, size)
+    pressure = st.slider("Pressure (psi)", float(lo), float(hi), step=1.0, format="%.0f",
+                         key=_default(f"lab_pressure_{fam}_{size}", float(min(max(40.0, lo), hi))),
+                         help="Higher pressure gives more flow and smaller droplets.")
+
+    ui.group("Weather")
+    wind = st.slider("Wind speed (m/s)", float(r["wind_speed_ms"][0]), float(r["wind_speed_ms"][1]),
+                     step=0.1, format="%.1f", key=_default("lab_wind", 3.0),
+                     help="1 m/s is about 2.2 mph. Spraying is not allowed above about 6.7 m/s (15 mph).")
+    wdir = st.selectbox("Wind direction", list(sl.WIND_DIRECTIONS),
+                        key=_default("lab_wind_dir", next(iter(sl.WIND_DIRECTIONS))),
+                        help="Relative to the sprayer. Only the sideways (crosswind) part of the wind "
+                             "carries droplets off the sprayed strip in this simulation.")
+    temp = st.slider("Air temperature (°C)", float(r["temp_c"][0]), float(r["temp_c"][1]),
+                     step=0.5, format="%.1f", key=_default("lab_temp", 25.0))
+    rh = st.slider("Relative humidity (%)", float(r["rh_pct"][0]), float(r["rh_pct"][1]),
+                   step=1.0, format="%.0f", key=_default("lab_rh", 55.0),
+                   help="Dry, hot air makes small droplets evaporate faster.")
+
+    ui.group("Sprayer and goal")
+    speed = st.slider("Travel speed (km/h)", float(r["travel_speed_kmh"][0]),
+                      float(r["travel_speed_kmh"][1]), step=0.5, format="%.1f",
+                      key=_default("lab_speed", 16.0),
+                      help="Driving faster spreads the same flow over more ground (lower rate per acre).")
+    height = st.slider("Boom height (m)", float(r["boom_height_m"][0]), float(r["boom_height_m"][1]),
+                       step=0.01, format="%.2f", key=_default("lab_height", 0.50),
+                       help="Height above the target. Higher booms give droplets more time in the air "
+                            "to drift and evaporate.")
+    target = st.slider("Target coverage (%)", 5.0, 60.0, step=1.0, format="%.0f",
+                       key=_default("lab_target", float(spec()["c_req_pct"])),
+                       help="Share of the water-sensitive paper card that should turn blue. It does not "
+                            "change the Good / Borderline / Poor class, which uses fixed limits.")
     u = Setting(fam, size, float(pressure))
     x = sl.make_conditions(wind, sl.WIND_DIRECTIONS[wdir], temp, rh, speed, height)
     return u, x, float(target)
 
 
-# ------------------------------------------------------------------ results
+# ------------------------------------------------------------------ cached run
+
+@st.cache_data(show_spinner=False, max_entries=24)
+def _compute(fam: str, size: str, psi: float, wind: float, rel_deg: float, temp: float, rh: float,
+             speed: float, height: float, target: float) -> dict:
+    """Everything the view needs for one input set, keyed on plain numbers."""
+    u = Setting(fam, size, psi)
+    x = sl.make_conditions(wind, rel_deg, temp, rh, speed, height)
+    return {"res": sl.run_lab(u, x, seed=_SEED, target_pct=target),
+            "cvp": coverage_vs_pressure(fam, size, x),
+            "dvw": drift_vs_wind(u, x),
+            "grid": coverage_grid(fam, size, x)}
+
+
+def _run(u: Setting, x: Conditions, target: float) -> dict:
+    return _compute(u.family, u.size, float(u.pressure_psi), float(x.wind_speed_ms),
+                    float(x.wind_dir_deg), float(x.temp_c), float(x.rh_pct),
+                    float(x.travel_speed_kmh), float(x.boom_height_m), float(target))
+
+
+def _wind_name(deg: float) -> str:
+    for name, d in sl.WIND_DIRECTIONS.items():
+        if abs(d - deg) < 1e-6:
+            return name.split(" (")[0].lower()
+    return f"{deg:.0f}° from the travel direction"
+
+
+# ------------------------------------------------------------------ result blocks
+
+def _chips(res: sl.LabResult) -> None:
+    s, c = res.setting, res.conditions
+    ui.chips([("Nozzle", f"{sl.family_label(s.family)}, size {s.size}"),
+              ("Pressure", f"{s.pressure_psi:.0f} psi"),
+              ("Wind", f"{c.wind_speed_ms:.1f} m/s, {_wind_name(c.wind_dir_deg)}"),
+              ("Air", f"{c.temp_c:.1f} °C, {c.rh_pct:.0f} % humidity"),
+              ("Boom", f"{c.boom_height_m:.2f} m"),
+              ("Speed", f"{c.travel_speed_kmh:.1f} km/h")])
+
+
+def _kpis(res: sl.LabResult) -> None:
+    o, d = res.outcome, res.derived
+    met = "met" if res.target_met else "not met"
+    ui.kpi_row([
+        ("Card coverage", f"{o.coverage_pct:.1f}% " + ui.badge(res.rating, res.rating_key),
+         f"target {res.target_pct:.0f}% {met}"),
+        ("Spray drift", f"{res.drift_pct:.1f}%",
+         f"{100 * res.fate['blown']:.1f}% blown, {100 * res.fate['evaporated']:.1f}% evaporated"),
+        ("Spray volume", f"{d.app_rate_gpa:.1f}", "gal/acre",
+         f"{gpa_to_lha(d.app_rate_gpa):.0f} L/ha · {d.flow_gpm:.2f} gal/min"),
+        ("Droplet size", res.droplet_class, f"median {d.vmd_um:.0f} µm"),
+        ("Spray deposit", f"{o.deposition_ul_cm2:.2f}", "µL/cm²",
+         f"about {100 * o.deposition_ul_cm2:.0f} L/ha on target"),
+    ])
+
 
 def _animation(res: sl.LabResult) -> None:
     payload = json.dumps(res.particles, separators=(",", ":")).replace("</", "<\\/")
     html = _HTML_PATH.read_text(encoding="utf8").replace("/*__PAYLOAD__*/null", payload, 1)
     embed_html(html, 575)
-
-
-def _kpis(res: sl.LabResult) -> None:
-    o, d = res.outcome, res.derived
-    color = _BADGE[res.rating_key]
-    cols = st.columns(5)
-    _kpi(cols[0], "Card coverage", f"{o.coverage_pct:.0f}%"
-         f'<span class="labbadge" style="background:{color}">{res.rating}</span>',
-         f"target {res.target_pct:.0f}%")
-    _kpi(cols[1], "Spray drift", _pct(res.drift_pct),
-         f"blown off {_pct(100 * res.fate['blown'])} · evaporated {_pct(100 * res.fate['evaporated'])}")
-    _kpi(cols[2], "Application rate", f"{d.app_rate_gpa:.1f} GPA",
-         f"{gpa_to_lha(d.app_rate_gpa):.0f} L/ha · {d.flow_gpm:.2f} gal/min per nozzle")
-    _kpi(cols[3], "Droplet size", res.droplet_class,
-         f"half the spray volume is in droplets under {d.vmd_um:.0f} µm")
-    _kpi(cols[4], "Spray deposit", f"{o.deposition_ul_cm2:.2f} µL/cm²",
-         f"about {100 * o.deposition_ul_cm2:.0f} L/ha reaches the target")
 
 
 _D_SCALE = alt.Scale(type="log", scheme="viridis", domain=list(sl.D_COLOR_RANGE))
@@ -207,15 +240,9 @@ def _fig_trajectories(res: sl.LabResult) -> None:
     gone = ", ".join(f"{d:g} µm ({'lands' if o == 'lands' else 'evaporates'} at {x:.1f} m)"
                      for d, o, x in zip(out["d_um"], out["outcome"], out["xd"]))
     st.caption(
-        "Path of single droplets released straight down from one nozzle (centre of the fan), from the "
-        "physics model. Each line is one initial droplet size; a dot marks where it lands, a × where it "
-        "has evaporated completely. Droplets leave the nozzle fast, slow down within a few centimetres, "
-        "then settle at their own fall speed while the crosswind carries them sideways; the farther a line "
-        "bends right, the more that size drifts. Sizes shown: "
-        + ", ".join(f"{d:g}" for d in sl.TRAJ_DIAMETERS_UM) + " µm (colour scale on the right; "
-        "nearly vertical lines are the large sizes). Axes in metres."
+        "Each line is one droplet size. Small droplets bend downwind; × marks full evaporation."
         + (f" Off the right edge: {gone}." if gone else "")
-        + (" No crosswind: all paths are vertical." if abs(U) < 0.05 else ""))
+        + (" No crosswind, so all paths are vertical." if abs(U) < 0.05 else ""))
 
 
 # ---------------------------------------------------------------- (b) drift potential
@@ -264,15 +291,9 @@ def _fig_potential(res: sl.LabResult) -> None:
         for mk in marks:
             chart2 = chart2 + mk
         _show(chart2, 300)
-    crit = (f"Droplets smaller than about **{m['d_crit_um']:.0f} µm** drift or evaporate under these conditions; "
-            if m["d_crit_um"] is not None else "No droplet size between 20 and 1000 µm is lost under these conditions; ")
-    st.caption(
-        "Drift potential by droplet size (one droplet per size, from the physics model). Left: how far "
-        "the crosswind moves a droplet before it lands (log scale; values below 1 mm are drawn at 1 mm). "
-        "Right: how long it stays in the air (fall time, or time until it has evaporated). Small droplets "
-        "fall slowly, so they spend longer in the wind and evaporate more. Points are coloured by outcome. "
-        + crit + f"half of this nozzle's spray volume is in droplets smaller than the VMD "
-        f"({m['vmd_um']:.0f} µm, blue line).")
+    crit = (f"Droplets below about {m['d_crit_um']:.0f} µm drift or evaporate. "
+            if m["d_crit_um"] is not None else "No droplet size from 20 to 1000 µm is lost. ")
+    st.caption(crit + f"The blue line is the VMD ({m['vmd_um']:.0f} µm).")
 
 
 # ---------------------------------------------------------------- (c) spectrum
@@ -311,14 +332,7 @@ def _fig_spectrum(res: sl.LabResult) -> None:
         text = alt.Chart(pts).mark_text(color=_BLUE, align="right", dx=-6, dy=-6, fontSize=11).encode(
             x="d_um:Q", y="cum_pct:Q", text="label:N")
         _show(curve + guide + dots + text, 300)
-    st.caption(
-        "Droplet size spectrum of this nozzle at this pressure (40 size classes of equal width on the "
-        "log axis, by size when leaving the nozzle). Left: how the spray volume is spread over droplet sizes "
-        "(dashed grey = everything emitted) and what happens to each size (green deposited on target, red "
-        "drifted, light grey evaporated); where the green line sits below the grey one, that size is being "
-        "lost. Right: cumulative share of the volume in droplets smaller than a given size; DV10, DV50 and "
-        "DV90 are the sizes below which 10 %, 50 % and 90 % of the volume lies (DV50 = VMD, the volume "
-        "median diameter used to name droplet-size classes).")
+    st.caption("DV10, DV50 and DV90 are the sizes below which 10, 50 and 90% of the volume lies.")
 
 
 # ---------------------------------------------------------------- (d) deposition profile
@@ -347,86 +361,87 @@ def _fig_profile(res: sl.LabResult) -> None:
     thr_rule = alt.Chart(thr).mark_rule(color=_RED, strokeDash=[5, 4]).encode(x=alt.X("v:Q", scale=xs))
     _show(band + area + app_rule + app_txt + thr_rule, 300)
     cv = m["cv_pct"]
-    cv_txt = (f" Uniformity in the middle of the boom (between the 2nd and 4th nozzle): coefficient of "
-              f"variation **CV = {cv:.1f} %** (a common guideline is that below about 10 % counts as uniform)."
+    cv_txt = (f" Evenness in the middle of the boom: CV = {cv:.1f}%."
               if cv is not None else "")
-    st.caption(
-        "Where the liquid lands across the boom (sum of all nozzles, per unit of ground area). Each nozzle "
-        f"spreads its liquid over a fan about {m['fan_width_m']:.2f} m wide (an illustrative bell-shaped "
-        "pattern, not a measured patternator test), shifted downwind by how far the wind moves each droplet "
-        "size. Green = liquid deposited on target, red = liquid displaced more than the drift threshold; "
-        "liquid that evaporates is missing. Shaded band = target swath, red dashed lines = drift threshold "
-        "beyond the swath, blue dashed line = applied rate (what would land with no losses)." + cv_txt)
+    st.caption("Illustrative fan pattern, not a patternator test." + cv_txt)
 
 
-# ---------------------------------------------------------------- (e) sensitivity
+# ---------------------------------------------------------------- operating-point curves
 
-def _fig_sensitivity(res: sl.LabResult) -> None:
-    F = res.figures
-    df, m = F["sensitivity"], F["sensitivity_meta"]
-    names = [m["nozzle"]] + ([m["alt"]] if m["alt"] else [])
-    colors = alt.Color("nozzle:N", title=None, scale=alt.Scale(domain=names, range=["#4da3ff", "#f5b942"][:len(names)]))
-    lines = alt.Chart(df).mark_line(strokeWidth=2).encode(
-        x=alt.X("wind_ms:Q", title="Wind speed (m/s)"),
-        y=alt.Y("drift_pct:Q", title="Spray drift (% of spray volume)"), color=colors,
-        tooltip=[alt.Tooltip("nozzle:N", title="Nozzle"), alt.Tooltip("wind_ms:Q", title="Wind (m/s)", format=".1f"),
-                 alt.Tooltip("drift_pct:Q", title="Spray drift (%)", format=".1f")])
-    cur = pd.DataFrame({"wind_ms": [m["wind_ms"]], "drift_pct": [m["drift_pct"]],
-                        "t": [f"now: {m['drift_pct']:.1f} % at {m['wind_ms']:.1f} m/s"]})
+def _curve(df: pd.DataFrame, x: str, y: str, xtitle: str, ytitle: str, color: str,
+           now: tuple[float, float], now_label: str, rule: tuple[float, str] | None = None):
+    """Line with the current operating point marked by a dot, a label and a vertical guide."""
+    line = alt.Chart(df).mark_line(color=color, strokeWidth=2.5).encode(
+        x=alt.X(f"{x}:Q", title=xtitle), y=alt.Y(f"{y}:Q", title=ytitle),
+        tooltip=[alt.Tooltip(f"{x}:Q", title=xtitle, format=".1f"),
+                 alt.Tooltip(f"{y}:Q", title=ytitle, format=".1f")])
+    cur = pd.DataFrame({"x": [now[0]], "y": [now[1]], "t": [now_label]})
+    guide = alt.Chart(cur).mark_rule(color="#8a94a6", strokeDash=[2, 3], opacity=0.5).encode(x="x:Q")
     dot = alt.Chart(cur).mark_point(filled=True, size=110, color="#e6edf3", shape="diamond").encode(
-        x="wind_ms:Q", y="drift_pct:Q")
-    txt = alt.Chart(cur).mark_text(color="#e6edf3", align="left", dx=8, dy=-8, fontSize=11).encode(
-        x="wind_ms:Q", y="drift_pct:Q", text="t:N")
-    lim = _vrule(m["wind_limit_ms"], _RED, f"{m['wind_limit_ms']:g} m/s (15 mph) limit", align="right")
-    _show(lines + dot + txt + lim, 300)
-    alt_txt = (f" The second line is {m['alt']}, a nozzle with about the same flow, for contrast."
-               if m["alt"] else "")
-    st.caption(
-        "How spray drift grows with wind speed for this nozzle and pressure, keeping the other conditions "
-        "and the wind direction you chose (only the sideways part of the wind causes drift here). The "
-        "diamond marks the current wind. Spraying is not allowed above about 6.7 m/s (15 mph)." + alt_txt)
+        x="x:Q", y="y:Q")
+    txt = alt.Chart(cur).mark_text(color="#e6edf3", align="left", baseline="bottom", dx=9, dy=-14,
+                                   fontSize=11).encode(x="x:Q", y="y:Q", text="t:N")
+    ch = line + guide + dot + txt
+    if rule is not None:
+        r = pd.DataFrame({"y": [rule[0]], "t": [rule[1]]})
+        # the target is a white dotted line in every view (replay panel B, charts.py)
+        ch = ch + alt.Chart(r).mark_rule(color="#e6edf3", strokeDash=[2, 3]).encode(y="y:Q")
+        ch = ch + alt.Chart(r).mark_text(color="#e6edf3", align="left", baseline="bottom", dx=4,
+                                         dy=-3, fontSize=11).encode(y="y:Q", x=alt.value(0), text="t:N")
+    return ch
 
 
-# ---------------------------------------------------------------- results layout
+def _tab_pressure_wind(run: dict, res: sl.LabResult) -> None:
+    o = res.outcome
+    s, c = res.setting, res.conditions
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        st.markdown("**Coverage vs pressure**")
+        ch = _curve(run["cvp"], "pressure_psi", "coverage_pct", "Pressure (psi)",
+                    "Coverage (% of card area)", charts.C_PRED,
+                    (s.pressure_psi, o.coverage_pct), f"{o.coverage_pct:.1f}% at {s.pressure_psi:.0f} psi",
+                    rule=(res.target_pct, f"target {res.target_pct:.0f}%"))
+        _show(ch, 260)
+    with c2:
+        st.markdown("**Drift vs crosswind**")
+        dv = run["dvw"].assign(drift_pct=100.0 * run["dvw"]["drift_frac"])
+        u_cross = abs(float(res.derived.u_cross_ms))
+        ch = _curve(dv, "wind_ms", "drift_pct", "Crosswind (m/s)", "Spray drift (% of spray)",
+                    "#ffb84d", (u_cross, res.drift_pct), f"{res.drift_pct:.1f}% at {u_cross:.1f} m/s")
+        _show(ch, 260)
+    g1, g2 = st.columns([3, 2], gap="medium")
+    with g1:
+        st.altair_chart(charts.heatmap(run["grid"], "coverage_pct", "Coverage map: pressure vs crosswind",
+                                       vtitle="Coverage (%)"), width="stretch")
+    with g2:
+        pat = pattern_overlap(res.derived.spray_angle_deg, c.boom_height_m)
+        st.altair_chart(charts.pattern_chart(pat), width="stretch")
+        st.caption(f"Evenness {pat['uniformity']:.2f} · fan width at the card "
+                   f"{100 * pat['fan_width_m']:.0f} cm · peak intensity {pat['peak']:.2f}. "
+                   "Nozzles 20 in apart. An illustration, not simulator output.")
 
-def _results(res: sl.LabResult) -> None:
-    st.markdown("#### Results")
-    _kpis(res)
-    st.caption("Card coverage is the share of a water-sensitive paper card at the target that turns "
-               "blue. Spray drift is the share of the sprayed liquid that never reaches the target: "
-               "carried more than "
-               f"{100 * spec()['physics']['drift_threshold_m']:.0f} cm sideways by the wind, or "
-               "evaporated in the air.")
+
+def _tab_droplets(res: sl.LabResult) -> None:
     left, right = st.columns([2, 3], gap="large")
     with left:
         st.markdown("**Water-sensitive paper card at the target**")
         if res.card_image is not None:
             st.image(res.card_image, width="stretch")
-        st.caption("A simulated 76 × 26 mm water-sensitive paper card placed in the crop under this "
-                   "spray: it is yellow, and turns blue wherever a droplet lands. "
-                   f"About {res.outcome.stains_per_cm2:.0f} droplet stains per cm²; "
-                   f"{res.outcome.coverage_pct:.0f}% of the card is covered.")
+        st.caption(f"About {res.outcome.stains_per_cm2:.0f} droplet stains per cm². "
+                   f"{res.outcome.coverage_pct:.1f}% of the card is covered.")
     with right:
-        st.markdown("**Spray drift vs wind speed**")
-        _fig_sensitivity(res)
-
-    st.markdown("#### The physics behind the result")
-    st.caption("All figures below come from the same physics model as the numbers above "
-               "(no gusts, nozzle wear or canopy effects).")
-    a, d = st.columns(2, gap="large")
-    with a:
         st.markdown("**Droplet trajectories by size**")
         _fig_trajectories(res)
-    with d:
-        st.markdown("**Deposit across the boom**")
-        _fig_profile(res)
-    st.markdown("**Drift potential: displacement and time in the air vs droplet size**")
-    _fig_potential(res)
+    st.markdown("**Deposit across the boom**")
+    _fig_profile(res)
     st.markdown("**Droplet size spectrum and where each size ends up**")
     _fig_spectrum(res)
+    st.markdown("**Drift potential: displacement and time in the air vs droplet size**")
+    _fig_potential(res)
 
 
 def _explainer() -> None:
+    thr_cm = 100 * spec()["physics"]["drift_threshold_m"]
     with st.expander("How this simulation works (and its limits)"):
         st.markdown(
             "- **Droplet sizes** come from the nozzle chart: the nozzle type, size and pressure set "
@@ -436,58 +451,51 @@ def _explainer() -> None:
             "crosswind. Small droplets settle slowly, so they spend longer in the wind.\n"
             "- **Evaporation**: droplets shrink as they fall, faster in hot, dry air. A droplet that "
             "shrinks to nothing before landing is lost.\n"
-            "- **Drift**: a droplet that lands more than "
-            f"{100 * spec()['physics']['drift_threshold_m']:.0f} cm sideways from where it was aimed "
-            "counts as drift.\n"
-            "- **The animation** shows a sample of about a thousand droplets. Large droplets are "
-            "shown more often than their real share by count (a real spray is mostly tiny "
-            "droplets), but each one is weighted by the liquid it carries, so the live percentages "
-            "match the results. The fan shape is geometric (droplets spread over the fan width with "
-            "a bell-shaped pattern); the drift decision depends only on how far the wind moves a "
-            "droplet. The height axis of the animation is stretched by the factor shown on it.\n"
-            "- This is a simplified, physics-based simulation with no gusts, nozzle wear or crop "
-            "canopy effects. It shows trends; it is not field data and not a validated drift model.")
+            f"- **Drift** is the share of the spray that never reaches the target: droplets that land "
+            f"more than {thr_cm:.0f} cm sideways from where they were aimed, plus droplets that "
+            "evaporate.\n"
+            "- **Card coverage** is the share of a simulated 76 × 26 mm water-sensitive paper card "
+            f"that turns blue. Good is {spec()['coverage_classes']['acceptable_min']:g}% or more and "
+            f"Borderline is {spec()['coverage_classes']['marginal_min']:g}% or more. These fixed limits are "
+            "the same ones the card reader and the field run use. The target coverage is a separate "
+            "goal and is reported as met or not met.\n"
+            "- **One number per quantity.** The numbers use the average droplet spread on paper, with "
+            "no random draw, so the coverage in the tiles, on the pressure curve and in the animation "
+            "tally is the same number. Nothing here has gusts, nozzle wear or crop canopy; those "
+            "appear only in the field run.\n"
+            "- **The animation** shows a sample of about a thousand droplets seen from behind the "
+            "sprayer, on true axes in metres (the height axis is stretched by the factor shown). Each "
+            "point is coloured by its diameter when it leaves the nozzle and shrinks as it "
+            "evaporates. Short ticks on the ground are deposited droplets, hollow circles are "
+            "droplets displaced by more than the drift threshold, and × marks full evaporation. Large "
+            "droplets are shown more often than their real share by count, but each is weighted by "
+            "its liquid volume, so the tally matches the results. The fan shape is geometric; drift "
+            "depends only on how far the wind moves a droplet.\n"
+            "- **Charts.** The pressure and wind curves mark the current setting with a diamond. "
+            "Trajectories follow single droplets released straight down from one nozzle. In the drift "
+            "potential chart, small droplets fall slowly, spend longer in the wind and evaporate more. "
+            "In the spectrum, DV10, DV50 and DV90 are the sizes below which 10, 50 and 90% of the "
+            "volume lies; DV50 is the volume median diameter (VMD). The deposit profile uses an "
+            "illustrative bell-shaped fan, not a measured patternator test, and CV is the "
+            "coefficient of variation of the deposit in the middle of the boom (below about 10% "
+            "counts as uniform).\n"
+            "- This is a simplified, physics-based simulation. It shows trends. It is not field data "
+            "and not a validated drift model.")
 
 
 # ------------------------------------------------------------------ entry point
 
-def render_spray_lab() -> None:
-    """Render the Spray lab tab content."""
-    st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown("### Spray lab")
-    st.markdown("Choose a nozzle and the weather, then press **Start simulation** to watch the spray "
-                "leave the nozzles, fall, evaporate and drift, and see how much reaches the target.")
-    st.caption("Physics-based simulation, not field data.")
-
-    u, x, target = _controls()
-    inputs = (u, x, target)
-    if st.button("Start simulation", type="primary", key="lab_start"):
-        with st.spinner("Simulating the spray..."):
-            st.session_state["lab_result"] = sl.run_lab(u, x, seed=_SEED, target_pct=target)
-            st.session_state["lab_inputs"] = inputs
-
-    res: sl.LabResult | None = st.session_state.get("lab_result")
-    if res is None:
-        st.info("Press **Start simulation** to run the spray.")
-        _explainer()
-        return
-    if st.session_state.get("lab_inputs") != inputs:
-        st.warning("You changed the settings. The animation and results below are for the previous "
-                   "settings; press **Start simulation** to update them.")
-    s, c = res.setting, res.conditions
-    st.markdown(
-        f"Showing **{sl.family_label(s.family)}**, size {s.size} at {s.pressure_psi:g} psi · wind "
-        f"{c.wind_speed_ms:.1f} m/s · {c.temp_c:g} °C, {c.rh_pct:.0f}% humidity · boom "
-        f"{c.boom_height_m:.2f} m · {c.travel_speed_kmh:g} km/h")
-    _animation(res)
-    st.caption(
-        "Simulated droplets seen from behind the sprayer, on true axes in metres (the height axis is "
-        "stretched by the stated factor so the fall is visible). Each point is a droplet coloured by its "
-        "diameter when it leaves the nozzle (colour bar, log scale); points shrink as they evaporate and "
-        "leave faint traces of their path. Short ticks on the ground line are droplets deposited on "
-        "target, hollow circles are droplets the wind displaced by more than the drift threshold, and × "
-        "marks where a droplet evaporated completely. Use the time slider to step through the spray; the "
-        "bar below tallies the released spray volume by outcome. About a thousand droplets are shown, "
-        "with large droplets over-represented by count but weighted by volume in the tally.")
-    _results(res)
+def render_nozzle_lab(u: Setting, x: Conditions, target: float) -> None:
+    """Render the results for these inputs into the current container (the main area)."""
+    run = _run(u, x, target)
+    res: sl.LabResult = run["res"]
+    _chips(res)
+    _kpis(res)
+    t_anim, t_curves, t_drops = st.tabs(["Spray animation", "Pressure and wind", "Droplets and card"])
+    with t_anim:
+        _animation(res)
+    with t_curves:
+        _tab_pressure_wind(run, res)
+    with t_drops:
+        _tab_droplets(res)
     _explainer()

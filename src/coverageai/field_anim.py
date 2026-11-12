@@ -5,8 +5,10 @@ canvas animation in ``app/field_run_view.py`` consumes. Everything the animation
 section travels in this one payload, so the picture, the card, the numbers and the advice
 always belong to the same section: the loop numbers (``app_logic.loop_numbers``, the same
 function the charts under the animation use), the card thumbnail and reader overlay
-(``PassResult.cards``), what the controller changed since the previous section
-(``app_logic.setting_changes``) and the operator recommendation (``app_logic.recommendations``).
+(``PassResult.cards``), what the model put out (prediction with its interval, predicted drift),
+what the feedback correction of that section rests on (``app_logic.feedback_basis``), what the
+controller changed since the previous section (``app_logic.setting_changes``) and the operator
+recommendation (``app_logic.recommendations``).
 """
 from __future__ import annotations
 
@@ -62,6 +64,7 @@ def field_animation_payload(res, c_req: float, cards: bool = True, advice: bool 
     layout = al.lap_layout(res.conds)
     thumbs = res.cards if cards and res.cards and len(res.cards) == len(res.logs) else None
     recs = al.recommendations(res) if advice else None
+    basis = al.feedback_basis(res)
     overlay = None
     if thumbs:
         overlay = "reader" if all("reader" in c for c in thumbs) else (
@@ -89,6 +92,12 @@ def field_animation_payload(res, c_req: float, cards: bool = True, advice: bool 
             "after_feedback": _f(n["after_feedback"], 1),
             "card": _f(n["card"], 1),
             "actual": _f(n["actual"], 1),
+            # the model's own output for the chosen setting, and what the correction rests on
+            "pred_lo": _f(lg.pred.coverage_lo, 1), "pred_hi": _f(lg.pred.coverage_hi, 1),
+            "pred_drift_pct": _f(lg.pred.drift_frac * 100.0, 1),
+            "card_minus_model_pp": _f(n["raw_error_pp"]),
+            "next_feedback_pp": _f(n["next_feedback_pp"]),
+            "basis": basis[k]["text"],
             "label": class_label(cls),
             "color": al.CLASS_COLORS.get(cls, al.CLASS_COLORS["critical"]),
             "drift_pct": _f(lg.outcome.drift_frac * 100.0, 2),
@@ -109,6 +118,10 @@ def field_animation_payload(res, c_req: float, cards: bool = True, advice: bool 
         "surprises": MISMATCH_NAMES.get(res.mismatch, str(res.mismatch)),
         "target": _f(c_req, 1),
         "nozzle_note": nozzle_note(res),
+        "feedback": bool(basis and basis[0]["uses_feedback"]),   # False: no card feedback in this strategy
+        # what the correction after a card applies to: the rule keeps one per group of conditions
+        "next_label": ("correction for a section like this now"
+                       if basis and basis[0]["source"] == "learned" else "correction for this group now"),
         "has_cards": bool(thumbs),
         "overlay_name": OVERLAY_NAMES.get(overlay, ""),
         "card_read": bool(res.used_vision),      # False: the card is shown but nothing read it

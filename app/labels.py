@@ -12,6 +12,16 @@ POLICY = {
     "oracle_card": "Perfect knowledge incl. card noise (unreachable bound)",
     "best_fixed": "Single best nozzle for whole field",
 }
+# Short names for places where several strategies sit side by side in a narrow space (the
+# sidebar's strategy picker). Each must stay distinct when cut off after about 20 characters.
+POLICY_SHORT = {
+    "open": "Model only",
+    "fast": "Card feedback",
+    "fast_slow": "Feedback + learning",
+    "oracle": "Knows hidden conditions",
+    "oracle_card": "Perfect knowledge",
+    "best_fixed": "Single best nozzle",
+}
 MISMATCH = {"none": "None", "low": "Low", "med": "Medium", "high": "High"}
 MODEL = {"oracle_nominal": "Physics model (ideal)", "spray": "Trained ML model",
          "mock": "Simple test model"}
@@ -42,6 +52,7 @@ def _get(d: dict, key, fallback=None):
 
 
 def policy(k): return _get(POLICY, k)
+def policy_short(k): return _get(POLICY_SHORT, k)
 def mismatch(k): return _get(MISMATCH, k)
 def model(k): return _get(MODEL, k)
 def verifier(k): return _get(VERIFIER, k)
@@ -61,9 +72,9 @@ def size(s): return f"Size {s}"
 def nozzle_choice(k) -> str:
     """Sidebar "Nozzle on the boom" options: auto, free, or 'FAMILY-SIZE'."""
     if k == "auto":
-        return "One nozzle for the whole field (model picks it)"
+        return "One nozzle, picked by the model"
     if k == "free":
-        return "Any nozzle, may change every section (experimental)"
+        return "Any nozzle, section by section"
     fam, _, sz = str(k).partition("-")
     return f"{fam} {sz} for the whole field"
 
@@ -90,6 +101,13 @@ FORECAST = {"off": "Off (plan with the wind read at the section start)",
 
 
 def forecast(k): return _get(FORECAST, k)
+
+
+FEEDBACK = {"rule": "Running average of card errors", "xgboost": "Trained model (XGBoost)",
+            "lightgbm": "Trained model (LightGBM)"}
+
+
+def feedback_choice(k): return _get(FEEDBACK, k)
 
 
 def parse_setting_text(txt: str) -> str:
@@ -139,18 +157,44 @@ def explain(line: str) -> str:
 
 
 # Column renames for the selector top-5 table
-TOP_COLS = {"Setting": "Nozzle setting", "Pred %": "Predicted coverage (%)",
+TOP_COLS = {"Setting": "Nozzle setting", "Pred %": "Predicted (%)",
             "Corr. %": "After feedback (%)", "Drift": "Drift (fraction)",
             "GPA": "Spray volume (gal/acre)", "Score": "Score (lower is better)",
             "Feasible": "Meets target"}
 
-CMP_COLS = {"policy": "Control strategy", "requirement met (%)": "Sections meeting target (%)",
-            "mean shortfall (pp)": "Average shortfall (pp)",
-            "mean volume (GPA)": "Average spray volume (gal/acre)",
-            "total volume (GPA)": "Total spray volume (gal/acre, summed)",
-            "mean drift (frac)": "Average drift (fraction)",
-            "re-treatment flags": "Needs re-spraying (sections)",
-            "infeasible": "No nozzle meets target (sections)"}
+POLICY_HELP = (
+    "Model only: pick settings from the model's prediction alone. "
+    "Model + card feedback: also correct the model using what the paper card shows. "
+    "Model + card feedback + learning between passes: the same, after learning a correction from "
+    "three earlier passes over the field. "
+    "Knows hidden conditions: picks knowing the real gusts, canopy and nozzle wear (a fair upper "
+    "bound, not achievable in practice). "
+    "Perfect knowledge incl. card noise: also knows each card's random variation (unreachable). "
+    "Single best nozzle: one setting for the whole field.")
+
+
+def compare_table(stats, reference_name: str, n_seeds: int):
+    """The "Compare strategies" table from ``app_logic.comparison_stats`` (one row per strategy,
+    ``policy`` already a display name). With one seed there is nothing to average, so the interval
+    and the paired difference are left out."""
+    import pandas as pd
+    many = n_seeds > 1
+    count = "{:.1f}" if many else "{:.0f}"
+    rows = []
+    for r in stats.to_dict("records"):
+        row = {"Control strategy": r["policy"], "Sections on target (%)": f"{r['met_pct']:.1f}"}
+        if many:
+            row["95% interval"] = f"{r['met_lo']:.1f} to {r['met_hi']:.1f}"
+            d = r.get("d_met_pp")
+            row[f"Difference vs {reference_name} (pp)"] = (
+                "reference" if d is None or d != d
+                else f"{d:+.1f} ({r['d_met_lo']:+.1f} to {r['d_met_hi']:+.1f})")
+        row.update({"Spray volume (gal/acre)": f"{r['volume_gpa']:.1f}", "Drift (%)": f"{r['drift_pct']:.2f}",
+                    "Average shortfall (pp)": f"{r['shortfall_pp']:.2f}",
+                    "Needs re-spraying (sections)": count.format(r["n_retreat"]),
+                    "No nozzle meets target (sections)": count.format(r["n_infeasible"])})
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 # "What the model decided" tables (app_logic.decision_frame) and their number formats
 DECISION_COLS = {"section": "Section", "nozzle": "Nozzle", "pressure_psi": "Pressure (psi)",
@@ -173,5 +217,37 @@ DECISION_FMT = {"pressure_psi": "{:g}", "speed_kmh": "{:.1f}", "boom_height_m": 
 LOOP_COLS = {"k": "Section", "predicted": "Model prediction (%)", "bias": "Feedback correction (pp)",
              "corrected": "Prediction after feedback (%)", "measured": "Card reading (%)",
              "true": "Actual coverage (%)", "error": "Prediction error (pp)",
-             "residual": "Error seen by the controller (pp)",
+             "residual": "Card minus prediction after feedback (pp)",
+             "raw_error": "Card minus model (pp)",
              "bias_after": "Correction after this card (pp)"}
+
+
+# Operator console (app/operator_view.py, coverageai.operator_console). The minimum is the fixed
+# "Good" limit (spec coverage_classes.acceptable_min); a tier is the controller's plan from the model.
+RATE_TIER = {"exact": "Minimum reached at the set rate",
+             "band": "Minimum reached inside the rate band",
+             "unreachable": "Minimum not reachable at this rate"}
+RATE_KNOB = {"pressure_at_rate": "Pressure (speed follows, rate held)", "boom_height": "Boom height"}
+RATE_MOVE = {("pressure_at_rate", 1): "raise pressure (speed follows)",
+             ("pressure_at_rate", -1): "lower pressure (speed follows)",
+             ("boom_height", 1): "raise the boom", ("boom_height", -1): "lower the boom"}
+
+
+def rate_tier(k): return "No plan recorded" if k is None else _get(RATE_TIER, k)
+def rate_knob(k): return _get(RATE_KNOB, k)
+def rate_move(knob, sign): return RATE_MOVE.get((knob, 1 if sign > 0 else -1), str(knob))
+
+
+OP_SECTION_COLS = {"section": "Section", "wind_ms": "Wind (m/s)", "pressure_psi": "Pressure (psi)",
+                   "speed_kmh": "Travel speed (km/h)", "boom_height_m": "Boom height (m)",
+                   "rate_gpa": "Rate (gal/acre)", "predicted_cov": "Model prediction (%)",
+                   "card_cov": "Card reading (%)", "actual_cov": "Actual coverage (%)",
+                   "card_class": "Card result", "tier": "Controller plan (model)"}
+OP_SECTION_FMT = {"wind_ms": "{:.1f}", "pressure_psi": "{:.0f}", "speed_kmh": "{:.1f}",
+                  "boom_height_m": "{:.2f}", "rate_gpa": "{:.2f}", "predicted_cov": "{:.1f}",
+                  "card_cov": "{:.1f}", "actual_cov": "{:.1f}"}
+OP_ADVICE_COLS = {"section": "Section", "card_cov": "Card reading (%)", "short_pp": "Short of the minimum (pp)",
+                  "advice": "What to change"}
+OP_ALT_COLS = {"nozzle": "Nozzle", "share_pct": "Sections predicted at the minimum or above (%)",
+               "mean_cov": "Mean predicted coverage (%)", "drift_pct": "Mean predicted drift (%)",
+               "pressure": "Pressure (psi)", "speed": "Travel speed (km/h)"}

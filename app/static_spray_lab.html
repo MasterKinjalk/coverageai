@@ -303,7 +303,8 @@
     el("final").textContent = ended ?
       "Final (simulator, by volume): deposited on target " + S.landed.toFixed(1) + " %, drifted " + S.blown.toFixed(1) +
       " %, evaporated " + S.evaporated.toFixed(1) + " % → spray drift " + S.drift.toFixed(1) + " %; card coverage " +
-      S.coverage.toFixed(1) + " % (" + S.rating + ", target " + S.target.toFixed(0) + " %)." : "";
+      S.coverage.toFixed(1) + " % (" + S.rating + "; target " + S.target.toFixed(0) + " % " +
+      (S.targetMet ? "met" : "not met") + ")." : "";
   }
 
   function frame(ts) {

@@ -40,7 +40,67 @@ def test_loop_numbers_match_log_fields(res):
         assert n["error_pp"] == pytest.approx(lg.outcome.coverage_pct - lg.corrected_pred_cov)
         assert n["card_error_pp"] == lg.residual
         assert n["next_feedback_pp"] == lg.extra.get("bias_after", lg.bias)
+        # eq. 3 learns from the card reading minus the RAW model prediction
+        assert n["raw_error_pp"] == pytest.approx(lg.meas.coverage_pct - lg.pred.coverage_pct)
     assert any(abs(lg.bias) > 1e-9 for lg in res.logs)      # the feedback actually moves in a fast run
+
+
+# ------------------------------------------------- what a correction is based on
+
+
+def test_feedback_basis_agrees_with_the_corrections_the_loop_applied(modules):
+    """The page says where each section's correction came from. That statement is rebuilt from
+    the logs, so check it against what the fast loop really did, and against eq. 3 by hand."""
+    from coverageai.config import spec
+    fb = spec()["feedback"]
+    alpha, warm = float(fb["alpha"]), int(fb["warmup_cards"])
+    conds = al.make_conditions("gusty_afternoon", 1)
+    res = al.run_pass_wrapper(modules, conds, "fast", 1, "med", 30.0, 0.6, fixed_nozzle="auto")
+    basis = al.feedback_basis(res)
+    assert len(basis) == res.n and all(b["uses_feedback"] for b in basis)
+    assert {b["source"] for b in basis} >= {"group", "none"}
+    own: dict[str, float] = {}          # each group's running correction, recomputed from the logs
+    seen: dict[str, int] = {}
+    for lg, b in zip(res.logs, basis):
+        regime = lg.extra["regime"]
+        assert b["cards_before"] == seen.get(regime, 0)
+        assert b["group"] and b["group"] in b["text"]
+        if b["source"] == "none":
+            assert lg.bias == 0.0 and b["cards_before"] < warm
+        elif b["source"] == "group":
+            assert b["cards_before"] >= warm
+            assert lg.bias == pytest.approx(own[regime], abs=1e-9)      # that group's own correction
+            assert str(b["cards_before"]) in b["text"]
+        else:
+            assert b["source"] == "field" and b["cards_before"] == 0
+        e = al.loop_numbers(lg)["raw_error_pp"]
+        own[regime] = (1 - alpha) * own.get(regime, 0.0) + alpha * e
+        seen[regime] = seen.get(regime, 0) + 1
+        assert al.loop_numbers(lg)["next_feedback_pp"] == pytest.approx(
+            own[regime] if seen[regime] >= warm else 0.0, abs=1e-9)
+
+
+def test_feedback_basis_for_a_strategy_without_feedback(modules):
+    conds = al.make_conditions("gusty_afternoon", 1, n_segments=6)
+    for policy in ("open", "oracle", "best_fixed"):
+        res = al.run_pass_wrapper(modules, conds, policy, 1, "med", 30.0, 0.6)
+        basis = al.feedback_basis(res)
+        assert len(basis) == res.n and not any(b["uses_feedback"] for b in basis), policy
+        assert all(b["source"] == "none" and "does not use card feedback" in b["text"] for b in basis)
+        assert field_animation_payload(res, 30.0)["feedback"] is False
+
+
+def test_regime_text_and_rule_text_use_plain_words_and_the_spec_numbers():
+    from coverageai.config import spec
+    fb = spec()["feedback"]
+    assert al.regime_text("u0-2|fine") == "crosswind 0 to 2 m/s, fine droplets"
+    assert al.regime_text("u4-99|coarse") == "crosswind above 4 m/s, coarse droplets"
+    assert al.regime_text("open") == al.regime_text("fixed") == al.regime_text(None) == ""
+    rule = al.feedback_rule_text()
+    assert f"{100 * fb['alpha']:.0f}% of (card reading minus model prediction)" in rule
+    assert f"{fb['warmup_cards']} cards" in rule and f"{fb['bias_clip_pp']:g} pp" in rule
+    for raw in ("alpha", "regime", "warmup", "u_cross", "bias"):
+        assert raw not in rule
 
 
 def test_payload_equals_timeseries_frame_rounded(res):

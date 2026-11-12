@@ -30,6 +30,16 @@ nozzle on the boom for a whole field, so with ``nozzle_lock = (family, size)`` t
 set is that nozzle's pressure grid only (speed and boom-height variants still apply when those
 options are on). ``best_nozzle`` picks the nozzle for a field from the model's predictions.
 With the lock off the candidate list, and therefore every result, is unchanged.
+
+Optional fixed application rate (``rate_lock`` = target gal/acre, off by default, needs
+``nozzle_lock``): the rate is a label rate and must stay within +-``rate_tol_frac`` (spec
+``rate_control.tolerance_frac``). Speed is then tied to pressure (see ``rate_control``), so the
+candidates are the locked nozzle's pressure grid, each with the speed that holds the rate (and
+the two band ends), times the boom-height variants if those are on; ``speed_options_kmh`` is
+ignored. The choice has three tiers: the lowest-drift feasible setting at exactly the target
+rate, else the lowest-drift feasible one inside the band, else the highest corrected coverage in
+the band (``info["infeasible"]``, ``info["target_unreachable_at_rate"]``). Volume is fixed by
+the rate, so ``lam`` and the volume term are not used. With the lock off nothing changes.
 """
 from __future__ import annotations
 
@@ -67,10 +77,16 @@ class ConstrainedSelector:
                  boom_height_options_m: Sequence[float] | None = None,
                  boom_height_band_frac: float | None = None,
                  boom_overlap_factor: float | None = None,
-                 nozzle_lock: tuple[str, str] | None = None):
+                 nozzle_lock: tuple[str, str] | None = None,
+                 rate_lock: float | None = None, rate_tol_frac: float | None = None):
         s = spec()["selector"]
         # Opt-in nozzle lock: None (default) = any nozzle per segment, the v1.0 behaviour.
         self.nozzle_lock = None if nozzle_lock is None else (str(nozzle_lock[0]), str(nozzle_lock[1]))
+        # Opt-in fixed application rate (gal/acre): None (default) = volume is a free trade-off.
+        self.rate_lock = None if rate_lock is None else float(rate_lock)
+        self.rate_tol_frac = float(spec().get("rate_control", {}).get("tolerance_frac", 0.05)
+                                   if rate_tol_frac is None else rate_tol_frac)
+        self._rate_cands: dict[tuple, list[Setting]] = {}
         # Opt-in travel-speed control: None -> spec default (empty = off).
         self.speed_options_kmh = list(s.get("speed_options_kmh", []) if speed_options_kmh is None
                                       else speed_options_kmh)
@@ -103,6 +119,8 @@ class ConstrainedSelector:
     def candidates_for(self, x: Conditions) -> list[Setting]:
         """Base candidates (only the locked nozzle's if ``nozzle_lock`` is set), plus speed
         variants within the band around x's speed if enabled."""
+        if self.rate_lock is not None:
+            return self._rate_candidates_for(x)
         out = self.candidates
         if self.nozzle_lock is not None:
             out = [u for u in out if (u.family, u.size) == self.nozzle_lock]
@@ -115,12 +133,30 @@ class ConstrainedSelector:
                                     self.boom_height_band_frac, self.boom_overlap_factor)
         return out
 
+    def _rate_candidates_for(self, x: Conditions) -> list[Setting]:
+        """Rate mode: iso-rate settings of the locked nozzle (cached), plus boom-height variants."""
+        if self.nozzle_lock is None:
+            raise ValueError("rate_lock needs nozzle_lock: the rate is held for one nozzle")
+        from coverageai import rate_control
+        key = (self.nozzle_lock, self.rate_lock, self.rate_tol_frac)
+        out = self._rate_cands.get(key)
+        if out is None:
+            out = self._rate_cands[key] = rate_control.iso_rate_candidates(
+                *self.nozzle_lock, self.rate_lock, self.rate_tol_frac)
+        if self.boom_height_options_m:
+            from coverageai.catalog import with_boom_heights
+            out = with_boom_heights(out, x.boom_height_m, self.boom_height_options_m,
+                                    self.boom_height_band_frac, self.boom_overlap_factor)
+        return list(out)
+
     def margin(self, cov: np.ndarray, lo: np.ndarray) -> np.ndarray:
         if self.use_interval_margin:
             return np.maximum(0.5 * self.margin_pp, cov - lo)
         return np.full_like(cov, self.margin_pp)
 
     def select(self, x: Conditions, model, bias: float, c_req: float) -> tuple[Setting, dict]:
+        if self.rate_lock is not None:
+            return self._select_rate(x, model, bias, c_req)
         t0 = time.perf_counter()
         cands = self.candidates_for(x)
         n = len(cands)
@@ -165,6 +201,50 @@ class ConstrainedSelector:
             "score": None if np.isnan(score[i]) else float(score[i]),
             "feasible": bool(feasible[i]),
         } for i in order]
+        t2 = time.perf_counter()
+        self.last_model_time_s = t1 - t0
+        info["model_time_s"] = t1 - t0
+        info["selector_time_s"] = t2 - t1
+        return cands[best], info
+
+    def _select_rate(self, x: Conditions, model, bias: float, c_req: float) -> tuple[Setting, dict]:
+        """Rate-locked choice (see the module docstring): exact-rate feasible, else band
+        feasible, else best coverage in the band. Order within a tier: drift, then pressure."""
+        t0 = time.perf_counter()
+        cands = self.candidates_for(x)
+        n = len(cands)
+        if n == 0:
+            raise ValueError("no candidate settings at this rate (speed range)")
+        preds = model.predict_batch([x] * n, cands)
+        t1 = time.perf_counter()
+        cov = np.array([p.coverage_pct for p in preds], float)
+        lo = np.array([p.coverage_lo for p in preds], float)
+        drift = np.array([p.drift_frac for p in preds], float)
+        corrected = cov + bias
+        m = self.margin(cov, lo)
+        feasible = corrected - m >= c_req
+        gpas = np.array([self._derive_fn(x, u).app_rate_gpa for u in cands], float)
+        dev = np.abs(gpas / self.rate_lock - 1.0)
+        exact = dev < 1e-6
+        press = np.array([u.pressure_psi for u in cands], float)
+        group = np.where(feasible, np.where(exact, 0, 1), 2)
+        # feasible tiers: lowest drift; unreachable tier: highest corrected coverage
+        primary = np.where(group == 2, -corrected, drift)
+        order = np.lexsort((press, primary, group))
+        best = int(order[0])
+        tier = ("exact", "band", "unreachable")[int(group[best])]
+        info: dict = {"n_candidates": n, "n_feasible": int(feasible.sum()),
+                      "infeasible": not bool(feasible.any()),
+                      "wind_limit_exceeded": bool(x.wind_speed_ms > self.wind_limit_ms),
+                      "lam": self.lam, "c_req": c_req, "bias": bias,
+                      "rate_mode": True, "rate_target_gpa": self.rate_lock, "rate_tier": tier,
+                      "target_unreachable_at_rate": tier == "unreachable"}
+        info["top"] = [{
+            **dataclasses.asdict(cands[i]), "pred_cov": float(cov[i]),
+            "corrected_cov": float(corrected[i]), "margin": float(m[i]),
+            "drift": float(drift[i]), "gpa": float(gpas[i]), "score": None,
+            "feasible": bool(feasible[i]),
+        } for i in order[:5]]
         t2 = time.perf_counter()
         self.last_model_time_s = t1 - t0
         info["model_time_s"] = t1 - t0

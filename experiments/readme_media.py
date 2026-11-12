@@ -167,11 +167,13 @@ def run_pass():
     from coverageai import app_logic as al
     from coverageai.config import spec
     c_req = float(spec()["c_req_pct"])
-    mods = al.build_modules_adapter("spray", "b0")
+    # as the app runs it by default: the card reader's known error removed (D30), one nozzle for the
+    # field (D19), cards kept for the replay (D22), trained card feedback (D31)
+    mods = al.build_modules_adapter("spray", "b0", calibrate_reader=True)
     conds = al.make_conditions(SCENARIO["preset"], SCENARIO["seed"])
-    # as the app runs it by default: one nozzle for the field (D19), cards kept for the replay (D22)
     res = al.run_pass_wrapper(mods, conds, SCENARIO["policy"], SCENARIO["seed"], SCENARIO["mismatch"], c_req,
-                              fixed_nozzle="auto", capture_cards=True)
+                              fixed_nozzle="auto", capture_cards=True, same_field=True,
+                              feedback_model=al.default_feedback_choice())
     return res, c_req
 
 
