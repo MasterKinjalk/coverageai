@@ -106,6 +106,9 @@ def loop_overview_html() -> str:
          "Computer vision measures the coverage on a water-sensitive paper card."),
         ("5 · Feed back", "Correct the next decision",
          "The gap between card and prediction corrects the next sections. Poor cards are flagged."),
+        ("6 · Effect", "What feedback changed",
+         "The setting picked with the correction against the one picked without it, and the actual "
+         "coverage of each, section by section."),
     ])
 
 
@@ -150,9 +153,13 @@ def loop_steps_html(res, k: int) -> str:
               f"{lg.meas.coverage_pct - lg.corrected_pred_cov:+.1f} pp")
     if lg.flagged_retreat:
         fb += " · section flagged for re-spraying"
-    return ui.loop_html([("1 · Predict", f"Section {k + 1}", pred), ("2 · Select", "Chosen setting", sel),
-                         ("3 · Spray", "What really happened", spray), ("4 · Verify", "Card reading", ver),
-                         ("5 · Feed back", "Correction", fb)])
+    steps = [("1 · Predict", f"Section {k + 1}", pred), ("2 · Select", "Chosen setting", sel),
+             ("3 · Spray", "What really happened", spray), ("4 · Verify", "Card reading", ver),
+             ("5 · Feed back", "Correction", fb)]
+    effect = al.feedback_effect(res)
+    if effect:
+        steps.append(("6 · Effect", "What feedback changed", effect[k]["text"]))
+    return ui.loop_html(steps)
 
 
 # ------------------------------------------------------------------ inputs
@@ -371,7 +378,8 @@ def run_field_pass(modules, v: dict) -> None:
         # the Compare view, so a run here and a row there are the same experiment
         new = al.run_pass_wrapper(modules, cached_conditions(v["preset"], v["seed"]), v["policy"], v["seed"],
                                   v["mismatch"], v["c_req"], v["lam"], capture_cards=v["cards"],
-                                  progress=tick, same_field=True, **controller_options(v))
+                                  progress=tick, same_field=True, explain_feedback=True,
+                                  **controller_options(v))
     except Exception as e:      # show the reason in the page instead of a traceback; keep the last run
         bar.empty()
         SS["field_error"] = f"{type(e).__name__}: {e}"
@@ -389,6 +397,41 @@ def field_cfg(v: dict) -> tuple:
     """What a field run depends on. "Show paper cards" is a display choice and is not part of it."""
     return (v["preset"], v["seed"], v["mismatch"], v["policy"], v["c_req"], v["lam"], v["model"],
             v["verifier"], v["speed"], v["boom"], v["forecast"], v["nozzle"], v["feedback"], v["calibrate"])
+
+
+def feedback_effect_text(s: dict) -> str:
+    """The run totals of ``app_logic.feedback_effect_summary`` in plain sentences."""
+    if not s["n_changed"]:
+        return ("Card feedback did not change the setting in any section of this run. It changed "
+                "only the coverage the controller expected, so the field got the same spray as "
+                "without feedback.")
+    return (f"Card feedback changed the setting in {s['n_changed']} of {s['n']} sections. "
+            f"Actual coverage averaged {s['mean_cov']:.1f}% with feedback and "
+            f"{s['mean_cov_without']:.1f}% without ({s['mean_gain_pp']:+.2f} pp; "
+            f"{s['mean_gain_changed_pp']:+.2f} pp in the changed sections). "
+            f"Sections on target: {s['n_met']} with feedback, {s['n_met_without']} without. "
+            f"Drift {s['mean_drift_pct']:.2f}% against {s['mean_drift_without_pct']:.2f}% of the "
+            f"sprayed volume; spray volume {s['mean_gpa']:.1f} against {s['mean_gpa_without']:.1f} "
+            "gal/acre.")
+
+
+def render_feedback_effect(res, k: int) -> None:
+    """Feedback loop tab: what card feedback changed in the decisions of this run and what that
+    did to the actual coverage (D33)."""
+    s = al.feedback_effect_summary(res)
+    if s is None:
+        return
+    st.markdown("**What feedback changed.** " + feedback_effect_text(s))
+    st.caption("Without feedback means the choice of the Model only strategy in the same section: "
+               "the same field, gusts and hidden surprises, the model's prediction with no "
+               "correction. Its actual coverage is simulator truth for that setting. This is one "
+               "run, not a multi-seed result.")
+    frame = al.feedback_effect_frame(res)
+    st.altair_chart(charts.feedback_effect_chart(frame, res.n, mark=k), width="stretch")
+    with st.expander("Setting with and without feedback, every section"):
+        st.dataframe(frame.rename(columns=L.FEEDBACK_EFFECT_COLS).style.format(
+            {L.FEEDBACK_EFFECT_COLS["actual_without"]: "{:.1f}", L.FEEDBACK_EFFECT_COLS["actual"]: "{:.1f}",
+             L.FEEDBACK_EFFECT_COLS["gain_pp"]: "{:+.2f}"}), hide_index=True, width="stretch")
 
 
 def render_learning(passes: list[dict]) -> None:
@@ -603,6 +646,7 @@ def render_field(res: al.PassResult, show_cards: bool) -> None:
                         "charts show the model's error only.")
         st.caption("The same numbers as replay panels B and D. Vertical line: the section picked in "
                    "Section detail.")
+        render_feedback_effect(res, k)
         with st.expander("Numbers for every section"):
             table = ts[list(L.LOOP_COLS)].rename(columns=L.LOOP_COLS)
             table.insert(3, "Correction based on", [b["text"] for b in basis])

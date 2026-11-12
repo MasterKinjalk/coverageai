@@ -221,6 +221,14 @@ LOOP_COLS = {"k": "Section", "predicted": "Model prediction (%)", "bias": "Feedb
              "raw_error": "Card minus model (pp)",
              "bias_after": "Correction after this card (pp)"}
 
+# what card feedback changed against the no-feedback ("Model only") choice (D33,
+# app_logic.feedback_effect_frame)
+FEEDBACK_EFFECT_COLS = {"k": "Section", "setting_without": "Setting without feedback",
+                        "setting": "Setting with feedback", "changes": "What feedback changed",
+                        "actual_without": "Actual coverage without feedback (%)",
+                        "actual": "Actual coverage (%)",
+                        "gain_pp": "Coverage gained by feedback (pp)"}
+
 
 # Operator console (app/operator_view.py, coverageai.operator_console). The minimum is the fixed
 # "Good" limit (spec coverage_classes.acceptable_min); a tier is the controller's plan from the model.

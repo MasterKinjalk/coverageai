@@ -45,6 +45,9 @@ lock file over the CUDA build. The repo path has a space: quote it. `pyproject.t
 - `vision/`: `render.py` (card renderer), `classical.py` (reader B0), `unet.py` (reader B1).
 - `integration.py`: `build_modules(model, verifier)` assembles the stack. `calibrate_reader=True`
   (opt-in, D30) removes the card reader's known mean error per coverage band.
+- What feedback changed (D33): `run_pass_wrapper(explain_feedback=True)` (on in the app's Field run
+  only) records the Model only choice of each section and its outcome on a copied simulator;
+  `app_logic.feedback_effect` reads it.
 - `recommend.py`: operator advice (which of pressure, speed, boom height to change, D20).
 - `rate_control.py`: fixed application rate (D32). With nozzle and gal/acre fixed, speed follows
   pressure; `ConstrainedSelector.rate_lock` (needs `nozzle_lock`) and `recommend(rate_lock=)` use
@@ -104,7 +107,8 @@ lock file over the CUDA build. The repo path has a space: quote it. `pyproject.t
 11. The app runs the learning strategy with `same_field=True` (D24). Outside the app the default
     is off and pinned by the golden digests.
 12. The replay must show, live, what the model put out for the section and what the feedback
-    correction is based on (the six rows under the card, D28). Do not remove them as a duplicate
+    correction is based on (the rows under the card, D28), and what the feedback changed against the
+    no-feedback choice (the Without feedback row, D33; `app_logic.feedback_effect` is its one source). Do not remove them as a duplicate
     of the charts: the charts show the values, the rows show where they come from. The fast loop
     learns from card reading minus the RAW model prediction (`loop_numbers` `raw_error_pp`), per
     regime; `app_logic.feedback_basis` and `feedback_rule_text` are the one place that says so.

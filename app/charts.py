@@ -94,6 +94,27 @@ def bias_chart(df: pd.DataFrame, n_total: int, height: int = 280, mark: int | No
     return _style(layers, height, "Feedback correction and the error left after it")
 
 
+def feedback_effect_chart(df: pd.DataFrame, n_total: int, height: int = 220, mark: int | None = None):
+    """Actual coverage gained by card feedback in each section (``app_logic.feedback_effect_frame``):
+    actual coverage with the setting used minus actual coverage with the no-feedback setting, pp.
+    Zero where feedback left the setting unchanged."""
+    x = alt.X("k:Q", title="Field section", scale=alt.Scale(domain=[1, max(n_total, 2)], nice=False))
+    d = df.assign(sign=np.where(df["gain_pp"] >= 0, "gain", "loss"))
+    bars = alt.Chart(d).mark_bar(size=7).encode(
+        x=x, y=alt.Y("gain_pp:Q", title="Percentage points (pp)"),
+        color=alt.Color("sign:N", scale=alt.Scale(domain=["gain", "loss"], range=["#3ddc97", "#ef5b5b"]),
+                        legend=None),
+        tooltip=[alt.Tooltip("k:Q", title="Field section"),
+                 alt.Tooltip("setting_without:N", title=L.FEEDBACK_EFFECT_COLS["setting_without"]),
+                 alt.Tooltip("setting:N", title=L.FEEDBACK_EFFECT_COLS["setting"]),
+                 alt.Tooltip("gain_pp:Q", title=L.FEEDBACK_EFFECT_COLS["gain_pp"], format="+.2f")])
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color=GRID).encode(y="y:Q")
+    layers = zero + bars
+    if mark is not None:
+        layers = layers + _mark(mark)
+    return _style(layers, height, "Actual coverage gained by feedback (zero: same setting)")
+
+
 def line_xy(df: pd.DataFrame, x: str, y: str, xtitle: str, ytitle: str, color: str = C_PRED,
             height: int = 240, extra_rule: float | None = None, y_fmt: str = ".3f",
             point: tuple[float, float] | None = None, title: str | None = None):

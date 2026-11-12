@@ -2,10 +2,14 @@
 
 For the next Claude Code session or teammate. Read `README.md` for setup, then this file, then the
 final scorecard `results/scorecard.md` (every proposal criterion and extension with its number,
-95% CI and source file) and `Docs/decisions.md` (D1-D31).
+95% CI and source file) and `Docs/decisions.md` (D1-D33).
 
 All planned work streams are finished and the final report is built (`reports/final/`), with no
 pending inputs left. The only open criterion is the real-card one, blocked by data access.
+
+## Finished on 2026-11-11 (what feedback changed, D33)
+
+* The Field run now shows what card feedback changed and what that did: for each section, the setting the Model only strategy would have picked on the same field and its actual coverage (simulator truth), against the setting used. Replay row Without feedback and grey rings in panel B, step 6 of Section detail, run totals with a bar chart and a table in the Feedback loop tab. Opt-in `run_pass_wrapper(explain_feedback=True)`, on in the app only; golden digests unchanged.
 
 ## Finished on 2026-11-11 (fixed application rate, Operator console, D32)
 

@@ -343,6 +343,10 @@ class PassResult:
     # selector info of the selection applied in each section of the displayed pass (None for a
     # section without one, e.g. best_fixed); see run_pass_wrapper
     selections: list[dict | None] | None = None
+    # what the controller would have done in each section of the displayed pass without card
+    # feedback (run_pass_wrapper(explain_feedback=True), feedback strategies only); see
+    # ``feedback_effect``
+    no_feedback: list[dict] | None = None
 
     @property
     def n(self) -> int:
@@ -384,8 +388,14 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                      fixed_nozzle: str | tuple[str, str] | None = None,
                      capture_cards: bool = False, same_field: bool = False,
                      progress: Callable[[int, int], None] | None = None,
-                     feedback_model: Any = None, rate_lock: float | None = None) -> PassResult:
+                     feedback_model: Any = None, rate_lock: float | None = None,
+                     explain_feedback: bool = False) -> PassResult:
     """Run one pass and keep what the UI needs (selector records, timing, card thumbnails).
+
+    ``explain_feedback`` (D33; off by default, the app's Field run turns it on): for the card
+    feedback strategies, also work out what the controller would have done in every section of
+    the displayed pass without card feedback, and what the plant would then have given
+    (``PassResult.no_feedback``, read through ``feedback_effect``). It changes no logged number.
 
     ``feedback_model`` (decision D29; None or "rule" = off, the eq. 3 running average): a trained
     ``feedback_learned.FeedbackModel``, or "xgboost" / "lightgbm" / a path to load one. The fast
@@ -451,7 +461,7 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
         return _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_setting,
                                 render, pass_id, n_learn, speed_control, boom_control, forecaster,
                                 fixed_nozzle, capture_cards, same_field, progress, feedback_model,
-                                rate_lock)
+                                rate_lock, explain_feedback)
 
 
 FEEDBACK_CHOICES = ("rule", "xgboost", "lightgbm")     # app option; "rule" is the default
@@ -494,7 +504,7 @@ def _learned_feedback(feedback_model: Any):
 def _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_setting, render,
                      pass_id, n_learn, speed_control, boom_control, forecaster, fixed_nozzle,
                      capture_cards, same_field, progress, feedback_model=None,
-                     rate_lock=None) -> PassResult:
+                     rate_lock=None, explain_feedback=False) -> PassResult:
     """Body of ``run_pass_wrapper``; the caller holds ``_STACK_LOCK``."""
     learned = _learned_feedback(feedback_model) if policy in TRAINED_FEEDBACK_POLICIES else None
     sel = modules.selector
@@ -591,9 +601,17 @@ def _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_s
                         render=vision, fixed_setting=fixed_setting, forecaster=fc, feedback=learned)
         # the selection applied in section k is the last call tagged base + k (CLAUDE.md rule 7)
         selections: list[dict | None] = [None] * len(logs)
-        for tag, _x, _u, info in rec.calls[first_call:]:
+        plan_x: list[Conditions | None] = [None] * len(logs)
+        for tag, x_call, _u, info in rec.calls[first_call:]:
             if tag is not None and 0 <= tag - base < len(logs):
                 selections[tag - base] = info
+                plan_x[tag - base] = x_call
+        no_fb_sel = None
+        if explain_feedback and policy in FEEDBACK_POLICIES:
+            # while the run's selector options (lam, grids, nozzle and rate lock) are still set
+            no_fb_sel = _no_feedback_selections(
+                inner, mods.model.base if policy == "fast_slow" else mods.model, logs, plan_x,
+                float(c_req), mods.derive_fn)
         sections.finish()
     finally:
         rec.tracker = old_tracker
@@ -605,6 +623,8 @@ def _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_s
         meta["passes"].append(_pass_summary(len(meta["passes"]) + 1, logs, float(c_req),
                                             mods.model, displayed=True))
     meta.setdefault("nozzle", {"mode": "best_fixed" if policy == "best_fixed" else "free"})
+    no_feedback = (_no_feedback_outcomes(mods.simulator, logs, no_fb_sel, run_seed, mismatch)
+                   if no_fb_sel is not None else None)
     # the recording proxies are for this call only: the result keeps the real renderer/verifier
     mods = dataclasses.replace(mods, renderer=modules.renderer, verifier=modules.verifier)
     return PassResult(logs=logs, conds=list(conds), policy=policy, seed=run_seed,
@@ -612,7 +632,45 @@ def _run_pass_locked(modules, conds, policy, seed, mismatch, c_req, lam, fixed_s
                       records=rec.records, fixed_setting=fixed_setting, used_vision=vision,
                       elapsed_s=time.perf_counter() - t0, meta=meta,
                       cards=cards if len(cards) == len(logs) and cards else None,
-                      selections=selections)
+                      selections=selections, no_feedback=no_feedback)
+
+
+def _no_feedback_selections(selector, model, logs: Sequence, plan_x: Sequence, c_req: float,
+                            derive_fn) -> list[dict]:
+    """What the selector picks in each section with no card feedback: zero correction and the
+    model without the slow loop's learned offset, with the same options as the run (call this
+    while they are set) and the same planning wind (``plan_x``, the conditions the run's
+    selector was called with). That is the choice of the "Model only" strategy. Calls the inner
+    selector, so nothing is recorded, and only the model: no simulator."""
+    out = []
+    for lg, xp in zip(logs, plan_x):
+        u, info = selector.select(xp if xp is not None else lg.x, model, 0.0, c_req)
+        out.append({"u": u, "infeasible": bool(info.get("infeasible", False))})
+    # the model's raw prediction for that setting, with the conditions the run predicted with
+    xs = [lg.x if "fc_wind_ms" not in lg.extra
+          else dataclasses.replace(lg.x, wind_speed_ms=lg.extra["fc_wind_ms"]) for lg in logs]
+    preds = model.predict_batch(xs, [o["u"] for o in out])
+    for o, x, p in zip(out, xs, preds):
+        o.update(pred_cov=float(p.coverage_pct), pred_drift=float(p.drift_frac),
+                 derived=derive_fn(x, o["u"]))
+    return out
+
+
+def _no_feedback_outcomes(simulator, logs: Sequence, sel: list[dict], seed: int,
+                          mismatch: str) -> list[dict]:
+    """Adds the plant's answer to each no-feedback choice: the copied simulator replays the pass
+    with the same per-section random streams. The hidden state (gust, canopy, wear) does not
+    depend on the setting (``simulator`` docstring), so each section sees exactly the conditions
+    it saw in the run, and a section whose setting is the same gets the same outcome."""
+    sim = _copy_simulator(simulator)
+    if hasattr(sim, "begin_pass"):
+        sim.begin_pass(seed, mismatch)
+    for k, (lg, o) in enumerate(zip(logs, sel)):
+        out = sim.simulate(lg.x, o["u"], segment_rng(seed, k), mismatch)
+        o.update(actual_cov=float(out.coverage_pct), actual_drift=float(out.drift_frac))
+    if hasattr(sim, "end_pass"):
+        sim.end_pass()
+    return sel
 
 
 def _parse_nozzle(v) -> tuple[str, str] | str | None:
@@ -910,8 +968,13 @@ def setting_changes(prev, cur) -> list[str]:
     """What the controller changed from section ``prev`` to ``cur`` (two SegmentLogs), in plain
     words: nozzle, pressure and, only where the controller sets them, travel speed and boom
     height. Changes in the field's own speed or height are conditions, not decisions."""
+    return setting_diff(prev.x, prev.u, cur.x, cur.u)
+
+
+def setting_diff(xa, a, xb, b) -> list[str]:
+    """What differs from setting ``a`` (under conditions ``xa``) to setting ``b`` (under ``xb``),
+    in the words of ``setting_changes``."""
     from coverageai.contracts import effective_boom_height_m, effective_speed_kmh
-    a, b = prev.u, cur.u
     out = []
     if (a.family, a.size) != (b.family, b.size):
         out.append(f"nozzle {a.family} {a.size} to {b.family} {b.size}")
@@ -919,14 +982,94 @@ def setting_changes(prev, cur) -> list[str]:
         out.append(f"pressure {a.pressure_psi:g} to {b.pressure_psi:g} psi "
                    f"({b.pressure_psi - a.pressure_psi:+g})")
     if a.travel_speed_kmh is not None or b.travel_speed_kmh is not None:
-        va, vb = effective_speed_kmh(prev.x, a), effective_speed_kmh(cur.x, b)
+        va, vb = effective_speed_kmh(xa, a), effective_speed_kmh(xb, b)
         if abs(va - vb) > 1e-9:
             out.append(f"speed {_fmt(va, 1)} to {_fmt(vb, 1)} km/h ({vb - va:+.1f})")
     if a.boom_height_m is not None or b.boom_height_m is not None:
-        ha, hb = effective_boom_height_m(prev.x, a), effective_boom_height_m(cur.x, b)
+        ha, hb = effective_boom_height_m(xa, a), effective_boom_height_m(xb, b)
         if abs(ha - hb) > 1e-9:
             out.append(f"boom {ha:.2f} to {hb:.2f} m ({hb - ha:+.2f})")
     return out
+
+
+def feedback_effect(res: "PassResult") -> list[dict] | None:
+    """For each section, what card feedback changed in the controller's decision and what that
+    did on the plant (D33). None when the run has no such record (a strategy without card
+    feedback, or ``explain_feedback`` off).
+
+    "Without feedback" is what the "Model only" strategy would have done in that section: the same
+    selector options, the model's raw prediction with no correction (for the learning strategy
+    also without the slow loop's offset), on the same field, gusts and hidden surprises. Its
+    actual coverage is simulator truth for that setting. Keys: ``changed`` (True when the setting
+    differs), ``changes`` (from the no-feedback setting to the one used, in the words of
+    ``setting_changes``), ``setting`` / ``setting_without`` (text), ``actual`` / ``actual_without``
+    and ``gain_pp`` (actual coverage, %, and the difference), ``predicted_without`` (the model's
+    raw prediction for the no-feedback setting), ``drift_pct`` / ``drift_without_pct``, ``gpa`` /
+    ``gpa_without``, and ``text``, one line for the page."""
+    if not res.no_feedback or len(res.no_feedback) != len(res.logs):
+        return None
+    out = []
+    for lg, o in zip(res.logs, res.no_feedback):
+        changes = setting_diff(lg.x, o["u"], lg.x, lg.u)
+        actual, without = float(lg.outcome.coverage_pct), float(o["actual_cov"])
+        gain = actual - without
+        if changes:
+            text = (f"Without feedback: {setting_text(o['u'])}, actual {without:.1f}%. Feedback "
+                    f"changed {'; '.join(changes)}: actual {actual:.1f}% ({gain:+.1f} pp).")
+        else:
+            text = ("Same setting as without feedback: the correction changed only the "
+                    "expected coverage.")
+        out.append({
+            "changed": bool(changes), "changes": changes,
+            "setting": setting_text(lg.u), "setting_without": setting_text(o["u"]),
+            "actual": actual, "actual_without": without, "gain_pp": gain,
+            "predicted_without": float(o["pred_cov"]),
+            "drift_pct": 100.0 * float(lg.outcome.drift_frac),
+            "drift_without_pct": 100.0 * float(o["actual_drift"]),
+            "gpa": float(lg.derived.app_rate_gpa), "gpa_without": float(o["derived"].app_rate_gpa),
+            "infeasible_without": bool(o["infeasible"]), "text": text,
+        })
+    return out
+
+
+def feedback_effect_summary(res: "PassResult", upto: int | None = None) -> dict | None:
+    """Run totals of ``feedback_effect`` over the first ``upto + 1`` sections (all if None): how
+    many settings feedback changed, and actual coverage, sections on target, drift and spray
+    volume with and without feedback. "On target" counts actual coverage at or above the target,
+    as ``compute_kpis`` does, so ``n_met`` here is the KPI's ``n_met``."""
+    eff = feedback_effect(res)
+    if eff is None:
+        return None
+    eff = eff if upto is None else eff[: upto + 1]
+    if not eff:
+        return None
+    c = float(res.c_req)
+    changed = [e for e in eff if e["changed"]]
+
+    def mean(key, rows=eff):
+        return float(np.mean([e[key] for e in rows])) if rows else 0.0
+
+    return {
+        "n": len(eff), "n_changed": len(changed),
+        "n_met": sum(e["actual"] >= c for e in eff),
+        "n_met_without": sum(e["actual_without"] >= c for e in eff),
+        "mean_cov": mean("actual"), "mean_cov_without": mean("actual_without"),
+        "mean_gain_pp": mean("gain_pp"), "mean_gain_changed_pp": mean("gain_pp", changed),
+        "mean_drift_pct": mean("drift_pct"), "mean_drift_without_pct": mean("drift_without_pct"),
+        "mean_gpa": mean("gpa"), "mean_gpa_without": mean("gpa_without"),
+    }
+
+
+def feedback_effect_frame(res: "PassResult") -> pd.DataFrame:
+    """One row per section: the setting without and with feedback and the actual coverage of
+    each (column names: ``labels.FEEDBACK_EFFECT_COLS`` keys)."""
+    eff = feedback_effect(res) or []
+    return pd.DataFrame([{
+        "k": k + 1, "setting_without": e["setting_without"], "setting": e["setting"],
+        "changes": "; ".join(e["changes"]) or "same setting",
+        "actual_without": e["actual_without"], "actual": e["actual"], "gain_pp": e["gain_pp"],
+    } for k, e in enumerate(eff)], columns=["k", "setting_without", "setting", "changes",
+                                            "actual_without", "actual", "gain_pp"])
 
 
 def decision_frame(res: "PassResult") -> pd.DataFrame:

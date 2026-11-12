@@ -58,7 +58,7 @@ const D=__PAYLOAD__;
 const S=D.sections,N=S.length,$=id=>document.getElementById(id);
 const cv=$('cv'),ctx=cv.getContext('2d');
 const TXT='#c9d1d9',MUT='#8a94a6',GRID='#2b3340',PLOT='#10151c';
-const CP='#6ea8fe',CC='#c58bff',CM='#ffb84d',CT='#e6edf3',CB='#4dd0c8',CW='#4da3ff',CD='#ef9a5b';
+const CP='#6ea8fe',CC='#c58bff',CM='#ffb84d',CT='#e6edf3',CB='#4dd0c8',CW='#4da3ff',CD='#ef9a5b',CN='#8a94a6';
 let W=0,H=0,dpr=1,t=0,playing=true,speed=1,last=null,hover=-1,scrubbing=false;
 const BASE=0.9;
 const FONT='system-ui,-apple-system,Segoe UI,sans-serif';
@@ -103,7 +103,7 @@ function tw(s,sz,w){ctx.font=(w||400)+' '+sz+'px '+FONT;return ctx.measureText(s
 
 // ---------- data ranges
 const vmax=axisRange(0,Math.max(D.target*1.5,...S.map(s=>s.actual)),5);
-const RB=axisRange(0,Math.max(D.bands.good_min,D.target,...S.map(s=>Math.max(s.predicted,s.after_feedback,s.card,s.actual)))*1.08,5);
+const RB=axisRange(0,Math.max(D.bands.good_min,D.target,...S.map(s=>Math.max(s.predicted,s.after_feedback,s.card,s.actual,s.nofb_actual)))*1.08,5);
 const RCl=axisRange(0,Math.max(...S.map(s=>Math.max(s.wind_speed_ms,s.crosswind_ms)))*1.08,4);
 const vm=S.map(s=>s.vmd_um),RCr=axisRange(Math.min(...vm)*0.92,Math.max(...vm)*1.06,4);
 const RDr=axisRange(0,Math.max(0.5,...S.map(s=>s.drift_pct))*1.08,3);
@@ -130,8 +130,9 @@ function layout(){
  LA={A:A,gx:gx,gy:A.y+top,cw:cw,ch:ch,g:g,gridW:gridW,gridH:gridH,cbY:A.y+top+gridH+28,cbH:10};
  // card panel K: title, card image, gauge, then the text block (#kinfo)
  const ky=LA.cbY+LA.cbH+48,K={x:A.x,y:ky,w:A.w-pad,h:A.y+A.h-ky};
- // leave room under the card for the six loop rows and a two-line recommendation
- K.imgH=D.has_cards?Math.max(0,Math.min(K.w/2.25,K.h-222)):0;
+ // leave room under the card for the loop rows (seven with the no-feedback row) and a
+ // two-line recommendation
+ K.imgH=D.has_cards?Math.max(0,Math.min(K.w/2.25,K.h-(D.no_feedback?258:222))):0;
  K.gY=K.y+22+K.imgH+9;
  LA.K=K.h>=70?K:null;
  const ki=$('kinfo');
@@ -148,7 +149,7 @@ function layout(){
 function setY(p,r){p.r=r;p.Y=v=>p.y+p.h-(v-r.min)/(r.max-r.min)*p.h}
 
 // ---------- panel frame
-function frame(p,title,legend,ylabel,r,col){
+function frame(p,title,legend,ylabel,r,col,short){
  setY(p,r);
  ctx.fillStyle=PLOT;ctx.fillRect(p.x,p.y,p.w,p.h);
  ctx.strokeStyle=GRID;ctx.lineWidth=1;
@@ -159,14 +160,21 @@ function frame(p,title,legend,ylabel,r,col){
  for(let k=1;k<=N;k++){if(k===1||k===N||(k%step===0&&N-k>=step*0.6)){const x=Math.round(p.X(k))+.5;ctx.beginPath();ctx.moveTo(x,p.y+p.h);ctx.lineTo(x,p.y+p.h+3);ctx.strokeStyle='#5b6575';ctx.stroke();
   text(String(k),x,p.y+p.h+13,{al:'center',sz:10.5,c:MUT})}}
  if(p.last)text('Field section (driving order)',p.x+p.w/2,p.y+p.h+31,{al:'center',sz:11.5,c:TXT});
+ // legend, right aligned in title row. If it would run into the title: tighter spacing and
+ // smaller type, then the short title (text width scales with the type size, spacing does not)
+ const tx=legend.reduce((a,L)=>a+tw(L.n,10.5),0),room=t_=>p.box.w-tw(t_,12.5,600)-18;
+ let sw=22,sg=12;
+ if(tx+(sw+sg)*legend.length>room(title)){sw=19;sg=6}
+ const gap=(sw+sg)*legend.length;
+ if(short&&tx*8.5/10.5+gap>room(title))title=short;
+ const lz=tx+gap>room(title)?Math.max(8.5,10.5*(room(title)-gap)/tx):10.5;
  text(title,p.box.x+2,p.box.y+13,{sz:12.5,w:600,c:CT});
  ctx.save();ctx.translate(p.box.x+11,p.y+p.h/2);ctx.rotate(-Math.PI/2);text(ylabel,0,0,{al:'center',sz:10.5,c:col||MUT});ctx.restore();
- // legend, right aligned in title row
  let lx=p.box.x+p.box.w-2;
- for(let i=legend.length-1;i>=0;i--){const L=legend[i],w=tw(L.n,10.5);lx-=w;text(L.n,lx,p.box.y+13,{sz:10.5,c:TXT});lx-=22;
-  ctx.strokeStyle=L.c;ctx.fillStyle=L.c;ctx.lineWidth=L.bar?5:2;ctx.setLineDash(L.d||[]);ctx.beginPath();ctx.moveTo(lx+2,p.box.y+9.5);ctx.lineTo(lx+16,p.box.y+9.5);ctx.stroke();ctx.setLineDash([]);
-  if(L.m){ctx.beginPath();ctx.arc(lx+9,p.box.y+9.5,2.6,0,6.283);ctx.fill()}
-  lx-=12}
+ for(let i=legend.length-1;i>=0;i--){const L=legend[i],w=tw(L.n,lz);lx-=w;text(L.n,lx,p.box.y+13,{sz:lz,c:TXT});lx-=sw;
+  ctx.strokeStyle=L.c;ctx.fillStyle=L.c;ctx.lineWidth=L.bar?5:2;ctx.setLineDash(L.d||[]);ctx.beginPath();ctx.moveTo(lx+2,p.box.y+9.5);ctx.lineTo(lx+sw-6,p.box.y+9.5);ctx.stroke();ctx.setLineDash([]);
+  if(L.m){ctx.beginPath();ctx.arc(lx+(sw-4)/2,p.box.y+9.5,2.6,0,6.283);ctx.fill()}
+  lx-=sg}
 }
 function cur(){return Math.min(Math.floor(t),N-1)}
 function series(p,key,color,o){
@@ -185,7 +193,9 @@ function cursors(p){
 
 // ---------- panels
 function drawB(p){
- frame(p,'B. Coverage by field section',[{n:'Model prediction',c:CP,d:[5,3]},{n:'After feedback',c:CC},{n:'Card reading',c:CM,m:1},{n:'Actual',c:CT,m:1}],'Coverage (% of card area)',RB);
+ const lg=[{n:'Model prediction',c:CP,d:[5,3]},{n:'After feedback',c:CC},{n:'Card reading',c:CM,m:1},{n:'Actual',c:CT,m:1}];
+ if(D.no_feedback)lg.push({n:'Actual without feedback',c:CN,m:1,d:[2,2]});
+ frame(p,'B. Coverage by field section',lg,'Coverage (% of card area)',RB,null,'B. Coverage');
  const bd=D.bands,b0=p.Y(0),b1=p.Y(bd.border_min),b2=p.Y(bd.good_min),b3=p.Y(RB.max);
  const cl=D.legend;
  ctx.fillStyle=hex(cl[2].color,.10);ctx.fillRect(p.x,b1,p.w,b0-b1);
@@ -195,6 +205,11 @@ function drawB(p){
  const ty=p.Y(D.target);ctx.strokeStyle='#e6edf3';ctx.setLineDash([2,3]);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(p.x,ty);ctx.lineTo(p.x+p.w,ty);ctx.stroke();ctx.setLineDash([]);
  text('Target '+D.target+'%',p.x+4,ty-3,{sz:10,c:CT});
  series(p,'predicted',CP,{dash:[5,3],lw:1.5});series(p,'after_feedback',CC);series(p,'card',CM,{mk:2.4,lw:1.2});series(p,'actual',CT,{mk:2.4,lw:2});
+ // where feedback changed the setting: the actual coverage the no-feedback setting would have given
+ if(D.no_feedback){ctx.strokeStyle=CN;ctx.lineWidth=1.4;
+  for(let k=0;k<=cur();k++){const s=S[k];if(!s.nofb_changed)continue;const x=p.X(k+1),y0=p.Y(s.nofb_actual),y1=p.Y(s.actual);
+   ctx.setLineDash([2,2]);ctx.beginPath();ctx.moveTo(x,y0);ctx.lineTo(x,y1);ctx.stroke();ctx.setLineDash([]);
+   ctx.beginPath();ctx.arc(x,y0,3.3,0,6.283);ctx.stroke()}}
  cursors(p)}
 function drawC(p){
  frame(p,'C. Controller response to weather',[{n:'Wind speed',c:CW},{n:'Crosswind',c:CB,d:[5,3]},{n:'Droplet size (right axis)',c:CM,m:1}],'Wind (m/s)',RCl);
@@ -296,7 +311,10 @@ function kinfo(){
   else h+=row('Feedback','<span class="m">not used by this strategy</span>');
   h+=row('Card read','<b style="color:'+CM+'">'+pct(s.card)+'</b> ('+s.label+') <span class="m">&middot; actual</span> '+pct(s.actual));
   if(D.feedback)h+=row('Card &minus; model','<b>'+pp(s.card_minus_model_pp)+'</b> <span class="m">&rarr; '+D.next_label+'</span> '+pp(s.next_feedback_pp));
-  h+=row('Setting',s.nozzle+(s.changed.length?' <span class="m">&middot; changed</span> '+s.changed.join('; '):''))+'</table>';
+  if(D.no_feedback)h+=row('Without feedback',s.nofb_changed
+   ?s.nofb_setting+' <span class="m">&rarr; actual</span> '+pct(s.nofb_actual)+' <span class="m">&middot; feedback changed</span> '+s.nofb_changes.join('; ')+' <b class="'+(s.nofb_gain_pp>=0?'up':'dn')+'">'+pp(s.nofb_gain_pp)+'</b>'
+   :'<span class="m">same setting; feedback changed only the expected coverage</span>');
+  h+=row('Setting',s.nozzle+(s.changed.length?' <span class="m">&middot; since last section</span> '+s.changed.join('; '):''))+'</table>';
   if(s.advice.length){const a=s.advice.join('; ');h+='<span class="adv'+(s.advice_status==='unreachable'?' hard':'')+'" title="'+a.replace(/"/g,'&quot;')+'"><b>Recommendation.</b> '+a+'</span>'}
  }
  if(el._h!==h){el.innerHTML=h;el._h=h}
