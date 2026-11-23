@@ -60,17 +60,19 @@ Every section leaves a rendered water-sensitive paper card (scanner or phone-cam
 
 <img src="Docs/media/app_field_run.png" alt="Streamlit demo app, Field run tab: sidebar with weather scenario, hidden mismatch, control strategy and target coverage; the five-step loop; and the animated field replay" width="100%">
 
-Four tabs: **Field run (closed loop)**, **Compare strategies** (open loop vs. feedback vs. oracles), **How the simulator works** (the spray lab), and **Nozzle explorer**. Settings can be preset in the URL, for example `http://localhost:8501/?preset=hot_dry&mismatch=high&policy=fast`.
+Four tabs: **Field run (closed loop)**, **Compare strategies** (open loop vs. feedback vs. oracles), **How the simulator works** (the spray lab), and **Nozzle explorer**. Settings can be preset in the URL, for example `http://localhost:8501/?preset=hot_dry&mismatch=high&policy=fast&adjust=1`.
 
-The **Field run** tab has these parts, top to bottom:
+The **Field run** tab keeps its controls in the sidebar and presents a mockup-inspired dashboard above a separate replay:
 
-* One animated replay. The field map, the water-sensitive paper card of the section being sprayed (with the outline the card reader found), and the coverage, weather, drift and feedback panels all move on one timeline. The replay has its own play, speed and scrub controls. `?cards=0` turns the card pictures off.
-* Run-level results.
-* **What the model decided**, with four tabs: operator recommendations, changes along the field, changes since the previous run, and all model outputs (with a CSV download). The recommendations (decision D20, `src/coverageai/recommend.py`) cover each section whose card reads below the target. They say which of pressure, travel speed and boom height to change and by how much, using the predictive model.
-* **Section inspector**: the details of one section.
-* **Feedback loop over the run**: charts that use the same numbers as panel D of the replay.
+* The dashboard summarizes environmental conditions, target machine setup and spray-system settings on the left, and shows a correction panel on the right. Its center contains a continuous simulated field surface: an animated sprayer crosses the rows and reveals interpolated simulator coverage. The setup, correction, and four round machine readouts update together with the dashboard's play, speed and scrub controls.
+* The **Field coverage replay** is its own section below the dashboard. Its section map, paper cards, in-replay coverage, weather, drift and feedback panels have separate play, speed and scrub controls. **Section to inspect (details below)** selects the static detail view; it does not control either live timeline. `?cards=0` turns card pictures off.
+* Run-level results, followed by coverage, drift and feedback graphs. The drift graph distinguishes model prediction from simulator outcome; these are simulation results, not field measurements.
+* **Model decisions and run analysis**, with tabs for operator recommendations, changes along the field, changes since the previous run, and all model outputs (with CSV downloads). The recommendations (decision D20, `src/coverageai/recommend.py`) cover each section whose card reads below the target. They say which of pressure, travel speed and boom height to change and by how much, using the predictive model.
+* **Section inspector** and the full feedback-loop table for detailed review.
 
-The sidebar item **Nozzle on the boom** follows what a real sprayer does. By default the model picks one nozzle for the whole field and only the pressure varies (decision D19). You can name a specific nozzle instead. "Any nozzle per section" is kept for experiments only. In the URL: `?nozzle=auto|free|XR-04`.
+The Field run sidebar groups inputs into **Weather Conditions**, **Machine setup**, and **Model selection**. Machine setup lets you choose a nozzle, target application rate (GPA), target travel speed in mph, pressure, and starting boom height. Travel speed is converted to the simulator's internal km/h; wind remains in m/s. Random seed and simulated real-world surprises are under Model selection. A GPA target always enables pressure, speed, and boom-height adjustment: the selector first prefers settings near the pressure and speed setpoints, then can use the selected nozzle's full guide-chart pressure range and legal speed range. Boom height can change to help coverage and drift but does not affect GPA. If no in-tolerance setting exists after those ranges are searched, the pass proceeds at the closest available rate and the app warns; it does not claim the target was met. The simple test model and Single best nozzle strategy cannot enforce a GPA target, so the app blocks those runs.
+
+The **Nozzle** selector lists the catalog nozzles by product code and holds the selected nozzle for the whole field; it defaults to **TP6501**. Examples include `TP6501`, `ULDQ2006`, `PS3DQ0004`, `XR11004`, and `DGX4003`. The XR simulation remains based on the existing XR110 catalog data. The "Single best nozzle" strategy chooses its own nozzle and ignores the selected one. In the URL, use a code such as `?nozzle=TP6501`.
 
 ## Results at a glance
 
@@ -94,7 +96,7 @@ All numbers are simulator-internal. Brackets are 95 % paired-bootstrap CIs over 
 </tr>
 </table>
 
-Not everything worked. The wind forecaster, boom-height control and the hybrid physics + ML predictor were evaluated and not adopted, and accuracy on real cards is untested because the annotated real-card set is restricted. The negative results are listed in [`results/scorecard.md`](results/scorecard.md).
+Not everything worked. The wind forecaster, boom-height control and the hybrid physics + ML predictor were evaluated and not adopted, and accuracy on real cards is untested because the annotated real-card set is restricted. The newer app workflow for target-GPA machine control has not been evaluated across seeds. The negative results are listed in [`results/scorecard.md`](results/scorecard.md).
 
 ## Setup
 
@@ -143,7 +145,7 @@ Without uv: `pip install -e ".[vision]" pytest`.
 ## Running things
 
 ```bash
-uv run streamlit run app/main.py          # demo app, http://localhost:8501 (?speed=1&boom=1&forecast=ar1 presets the opt-in controls)
+uv run streamlit run app/main.py          # demo app, http://localhost:8501 (?adjust=1&forecast=ar1)
 uv run pytest -q                          # tests
 uv run python -m coverageai.e2e --smoke   # end-to-end smoke pass
 uv run python -m coverageai.e2e --real --model spray --verifier b1

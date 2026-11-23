@@ -78,6 +78,7 @@ def test_logs_frame_row_count(res):
     f = al.logs_frame(res)
     assert len(f) == res.n
     assert f["extra_sel_n_candidates"].notna().all()
+    assert "x_travel_speed_mph" in f and "x_travel_speed_kmh" not in f
     assert f["k"].tolist() == list(range(res.n)) if "k" in f.columns else True
 
 
@@ -96,7 +97,7 @@ def test_setting_changes_detects_each_controlled_change(res):
     assert len(ch) == 1 and ch[0].startswith("pressure") and "+10" in ch[0]
     nz = _with(a, u=dataclasses.replace(a.u, family="TP65", size="08"))
     ch = al.setting_changes(a, nz)
-    assert any(c.startswith("nozzle") and "TP65 08" in c for c in ch)
+    assert any(c.startswith("nozzle") and "TP6508" in c for c in ch)
     sp = _with(a, u=dataclasses.replace(a.u, travel_speed_kmh=10.0))
     ch = al.setting_changes(a, sp)
     assert len(ch) == 1 and ch[0].startswith("speed") and "10" in ch[0]

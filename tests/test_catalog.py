@@ -19,6 +19,17 @@ def test_load_cached_and_columns():
 def test_families_sizes():
     assert set(catalog.families()) == {"TP65", "ULD", "3D", "XR", "DGX40"}
     assert catalog.sizes("DGX40") == ["03", "04", "05", "06"]
+
+
+@pytest.mark.parametrize(("family", "size", "code"), [
+    ("TP65", "01", "TP6501"),
+    ("ULD", "06", "ULDQ2006"),
+    ("3D", "04", "PS3DQ0004"),
+    ("XR", "04", "XR11004"),
+    ("DGX40", "03", "DGX4003"),
+])
+def test_nozzle_display_codes(family, size, code):
+    assert catalog.nozzle_code(family, size) == code
     xr = catalog.sizes("XR")
     assert xr[:3] == ["01", "015", "02"] and xr[-1] == "15" and "035" in xr
     assert catalog.sizes("ULD") == ["015", "02", "025", "03", "04", "05", "06", "08"]

@@ -42,15 +42,22 @@ MAX_W = 1600
 JPEG_THRESHOLD = 700 * 1024      # PNGs still larger than this after resizing become JPEG
 
 # ----------------------------------------------------------------------------- orchestrator inputs
-# (a) Streamlit app browser check, summarized from the browser-check agent's report to the
-#     orchestrator (2026-10-19; commit 15229a8 "App: fix browser-check bugs, add opt-in
-#     speed/boom/forecast controls"). The 30 s / 40-card U-Net figure is that agent's measurement.
+# (a) Streamlit app browser check, updated 2026-11-19 for machine controls and live adjustment
+#     readouts. The 30 s / 40-card U-Net figure is from the 2026-10-19 browser check.
 APP_CHECK: str | None = (
-    "Checked on 2026-10-19 with headless Chrome over CDP against the live app: all six strategies and the perfect, "
-    "classic and noisy readers ran; play/pause, speeds, scrubber, hover and click-to-seek and the end-of-run summary work; "
-    "<code>fast_slow</code> shows the learning-between-passes table and the card replay is consistent for every strategy at "
-    "med and high mismatch; the Compare tab, Spray lab and nozzle explorer render. A full 40-card pass with the U-Net reader "
-    "takes about 30 s on the idle desktop CPU. Five display bugs found in the check were fixed; the app tests pass.")
+    "Checked on 2026-11-15 with focused Streamlit tests and a live headless-browser pass: the Field run sidebar "
+    "groups weather, machine setup and model settings; the nozzle is held through the field and defaulted to TP6501; "
+    "target GPA, pressure, mph travel speed and boom height controls render. A GPA target now always enables "
+    "pressure/speed/boom adjustment, and the UI marks this adjustment as required. The mockup-style dashboard "
+    "and smooth field canvas use one play/scrub timeline; four live circles show the selected pressure, speed, "
+    "GPA and boom height relative to their targets, with card coverage shown against its goal in the correction panel. "
+    "The existing "
+    "tiled replay has its own controls. The run summary, strategy comparison, Spray lab and nozzle explorer render. "
+    "A full 40-card pass with the U-Net reader was earlier measured at about 30 s on the idle desktop CPU; these newer "
+    "dashboard and sidebar layouts were not evaluated across seeds or by operators. On 2026-11-18, focused selector and "
+    "Streamlit tests verified that GPA takes priority over setpoint bands within nozzle-chart/legal speed ranges, "
+    "and on 2026-11-19 tests verified that an infeasible target runs at the closest available rate with a warning "
+    "and that the live circles show current settings and target deltas. No new browser or field validation was performed.")
 # (b) Per-card reader timing re-measured on 2026-10-19 (same protocol as results/verification_eval.json:
 #     30 renderer test cards, warm-up, min of 3 calls, B1 on CPU). Read from the results file.
 B1_IDLE_RETIME: dict | None = None     # filled in build() by idle_retime()

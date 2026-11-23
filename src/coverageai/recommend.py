@@ -27,9 +27,10 @@ import numpy as np
 from coverageai.config import spec
 from coverageai.contracts import (Conditions, Derived, Setting, effective_boom_height_m,
                                   effective_speed_kmh)
+from coverageai.units import kmh_to_mph
 
 KNOBS = ("pressure", "speed", "boom_height")
-UNITS = {"pressure": "psi", "speed": "km/h", "boom_height": "m"}
+UNITS = {"pressure": "psi", "speed": "mph", "boom_height": "m"}
 STEPS = {"pressure": 5.0, "speed": 1.0, "boom_height": 0.05}      # size of one recommended step
 MAX_JOINT_VALUES = 6       # values per control tried in a joint move (6^3 + 1 settings at most)
 _DECIMALS = {"pressure": 0, "speed": 1, "boom_height": 2}
@@ -61,8 +62,12 @@ class Adjustment:
     def describe(self, effect: bool = True) -> str:
         nd = _DECIMALS[self.knob]
         up, down = _VERBS[self.knob]
-        s = (f"{up if self.delta > 0 else down} {self.current:.{nd}f} to {self.proposed:.{nd}f} "
-             f"{self.unit} ({self.delta:+.{nd}f} {self.unit})")
+        current, proposed = self.current, self.proposed
+        if self.knob == "speed":
+            current, proposed = kmh_to_mph(current), kmh_to_mph(proposed)
+        delta = proposed - current
+        s = (f"{up if self.delta > 0 else down} {current:.{nd}f} to {proposed:.{nd}f} "
+             f"{self.unit} ({delta:+.{nd}f} {self.unit})")
         if effect:
             s += f": coverage about {self.expected_cov:.0f}% ({self.gain_pp:+.1f} pp)"
         return s

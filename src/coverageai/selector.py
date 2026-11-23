@@ -8,7 +8,8 @@ V(u) is the application volume per area, derive(x,u).app_rate_gpa (uses the effe
 travel speed: u.travel_speed_kmh if set, else x's).
 
 Optional speed control (``speed_options_kmh``, off by default): each base candidate is also
-offered at every grid speed within +-speed_band_frac of x's speed and the spec speed range.
+offered at grid speeds within +-speed_band_frac of x's speed and the spec speed range. If a
+GPA target cannot be reached in that band, the selector can expand to the full spec speed range.
 Slower travel raises GPA and deposition (and lowers drift per unit liquid), faster does the
 reverse, so the selector can trade volume for coverage without changing the nozzle.
 
@@ -58,6 +59,30 @@ def _minmax(v: np.ndarray) -> np.ndarray:
     return (v - v.min()) / rng
 
 
+def _near_target(candidates: Sequence[Setting], values: Sequence[float], target: float,
+                 tolerance_frac: float) -> tuple[list[Setting], bool]:
+    """Keep values within a relative target tolerance, or the nearest available values."""
+    if not candidates:
+        return [], False
+    errors = np.abs(np.asarray(values, dtype=float) - float(target))
+    tolerance = abs(float(target)) * float(tolerance_frac)
+    within = errors <= tolerance + 1e-9
+    if within.any():
+        return [u for u, keep in zip(candidates, within) if keep], True
+    nearest = errors.min()
+    return [u for u, error in zip(candidates, errors) if error <= nearest + 1e-9], False
+
+
+def _within_target(candidates: Sequence[Setting], values: Sequence[float], target: float,
+                   tolerance_frac: float) -> list[Setting]:
+    """Keep only values inside a relative target tolerance."""
+    if not candidates:
+        return []
+    errors = np.abs(np.asarray(values, dtype=float) - float(target))
+    tolerance = abs(float(target)) * float(tolerance_frac)
+    return [u for u, error in zip(candidates, errors) if error <= tolerance + 1e-9]
+
+
 class ConstrainedSelector:
     def __init__(self, lam: float | None = None, margin_pp: float | None = None,
                  use_interval_margin: bool | None = None,
@@ -67,7 +92,12 @@ class ConstrainedSelector:
                  boom_height_options_m: Sequence[float] | None = None,
                  boom_height_band_frac: float | None = None,
                  boom_overlap_factor: float | None = None,
-                 nozzle_lock: tuple[str, str] | None = None):
+                 nozzle_lock: tuple[str, str] | None = None,
+                 target_gpa_gal_acre: float | None = None,
+                 gpa_tolerance_frac: float = 0.05,
+                 pressure_target_psi: float | None = None,
+                 pressure_control: bool = False,
+                 pressure_band_frac: float = 0.25):
         s = spec()["selector"]
         # Opt-in nozzle lock: None (default) = any nozzle per segment, the v1.0 behaviour.
         self.nozzle_lock = None if nozzle_lock is None else (str(nozzle_lock[0]), str(nozzle_lock[1]))
@@ -83,6 +113,11 @@ class ConstrainedSelector:
                                            if boom_height_band_frac is None else boom_height_band_frac)
         self.boom_overlap_factor = float(s.get("boom_overlap_factor", 1.3)
                                          if boom_overlap_factor is None else boom_overlap_factor)
+        self.target_gpa_gal_acre = target_gpa_gal_acre
+        self.gpa_tolerance_frac = float(gpa_tolerance_frac)
+        self.pressure_target_psi = pressure_target_psi
+        self.pressure_control = bool(pressure_control)
+        self.pressure_band_frac = float(pressure_band_frac)
         self.lam = float(s["lambda"] if lam is None else lam)
         self.margin_pp = float(s["margin_pp"] if margin_pp is None else margin_pp)
         self.use_interval_margin = bool(s["use_interval_margin"] if use_interval_margin is None
@@ -100,20 +135,81 @@ class ConstrainedSelector:
             self._cands = list(self._candidates_fn())
         return self._cands
 
-    def candidates_for(self, x: Conditions) -> list[Setting]:
-        """Base candidates (only the locked nozzle's if ``nozzle_lock`` is set), plus speed
-        variants within the band around x's speed if enabled."""
+    def _candidates_before_gpa(self, x: Conditions, *, relax_pressure: bool = False,
+                                relax_speed: bool = False) -> list[Setting]:
         out = self.candidates
         if self.nozzle_lock is not None:
             out = [u for u in out if (u.family, u.size) == self.nozzle_lock]
+        if self.pressure_target_psi is not None and not (
+                relax_pressure and self.pressure_control):
+            pressure_tolerance = self.pressure_band_frac if self.pressure_control else 0.0
+            out, _ = _near_target(out, [u.pressure_psi for u in out],
+                                  self.pressure_target_psi, pressure_tolerance)
         if self.speed_options_kmh:
             from coverageai.catalog import with_speeds
-            out = with_speeds(out, x.travel_speed_kmh, self.speed_options_kmh, self.speed_band_frac)
+            speed_band = self.speed_band_frac
+            speed_options = self.speed_options_kmh
+            if relax_speed:
+                speed_lo, speed_hi = spec()["ranges"]["travel_speed_kmh"]
+                speed_options = sorted({
+                    *map(float, self.speed_options_kmh), float(speed_lo), float(speed_hi)
+                })
+                current = float(x.travel_speed_kmh)
+                if current > 0:
+                    speed_band = max((current - float(speed_lo)) / current,
+                                     (float(speed_hi) - current) / current, 0.0)
+            out = with_speeds(out, x.travel_speed_kmh, speed_options, speed_band)
         if self.boom_height_options_m:   # combinable with speed: full product of the two grids
             from coverageai.catalog import with_boom_heights
             out = with_boom_heights(out, x.boom_height_m, self.boom_height_options_m,
                                     self.boom_height_band_frac, self.boom_overlap_factor)
         return out
+
+    def _gpa_candidate_sets(self, x: Conditions) -> list[list[Setting]]:
+        """Progressively relax setpoint bands, never the nozzle chart or legal speed range."""
+        can_relax_pressure = self.pressure_control and self.pressure_target_psi is not None
+        can_relax_speed = bool(self.speed_options_kmh)
+        relaxations = [(False, False)]
+        if can_relax_pressure:
+            relaxations.append((True, False))
+        if can_relax_speed:
+            relaxations.append((False, True))
+        if can_relax_pressure and can_relax_speed:
+            relaxations.append((True, True))
+        return [self._candidates_before_gpa(x, relax_pressure=pressure, relax_speed=speed)
+                for pressure, speed in relaxations]
+
+    def candidates_for(self, x: Conditions) -> list[Setting]:
+        """Candidates within GPA, or the closest available rates after all relaxations."""
+        if self.target_gpa_gal_acre is None:
+            return self._candidates_before_gpa(x)
+        closest_candidates: list[Setting] = []
+        for candidates in self._gpa_candidate_sets(x):
+            rates = [self._derive_fn(x, u).app_rate_gpa for u in candidates]
+            nearest, within = _near_target(candidates, rates, self.target_gpa_gal_acre,
+                                           self.gpa_tolerance_frac)
+            if within:
+                return nearest
+            if nearest:
+                closest_candidates = nearest
+        return closest_candidates
+
+    def gpa_target_status(self, x: Conditions) -> tuple[bool, float | None]:
+        """Check all allowed pressure/speed ranges and return the closest rate if infeasible."""
+        if self.target_gpa_gal_acre is None:
+            return True, None
+        closest: float | None = None
+        for options in self._gpa_candidate_sets(x):
+            options_rates = [self._derive_fn(x, u).app_rate_gpa for u in options]
+            if _within_target(options, options_rates, self.target_gpa_gal_acre,
+                              self.gpa_tolerance_frac):
+                return True, None
+            if options_rates:
+                nearest = min(options_rates, key=lambda rate: abs(rate - self.target_gpa_gal_acre))
+                if closest is None or abs(nearest - self.target_gpa_gal_acre) < abs(
+                        closest - self.target_gpa_gal_acre):
+                    closest = nearest
+        return False, closest
 
     def margin(self, cov: np.ndarray, lo: np.ndarray) -> np.ndarray:
         if self.use_interval_margin:
@@ -165,6 +261,14 @@ class ConstrainedSelector:
             "score": None if np.isnan(score[i]) else float(score[i]),
             "feasible": bool(feasible[i]),
         } for i in order]
+        if self.target_gpa_gal_acre is not None:
+            chosen_gpa = gpa(cands[best])
+            info.update(
+                target_gpa_gal_acre=float(self.target_gpa_gal_acre),
+                selected_gpa_gal_acre=float(chosen_gpa),
+                gpa_target_met=abs(chosen_gpa - self.target_gpa_gal_acre)
+                <= self.target_gpa_gal_acre * self.gpa_tolerance_frac + 1e-9,
+            )
         t2 = time.perf_counter()
         self.last_model_time_s = t1 - t0
         info["model_time_s"] = t1 - t0
@@ -175,14 +279,13 @@ class ConstrainedSelector:
                     bias: float = 0.0) -> tuple[tuple[str, str], dict]:
         """The one nozzle (family, size) to carry for a whole field (decision D19).
 
-        For every nozzle in the base grid and every segment, the pressure is the lowest-drift
-        one that meets the selector's own constraint (corrected coverage - margin >= c_req), or
-        the highest-coverage one if none does. Nozzles are ranked by the share of segments that
-        can meet the target, then by the selector's own trade-off (lam x mean drift +
-        (1 - lam) x mean volume, min-max normalized over the nozzles tied on that share). Only
-        pressure is varied; speed and boom-height options do not enter the choice. Uses the model's
-        predictions only (what an operator knows before the pass), one ``predict_batch`` call.
-        Returns ((family, size), stats) with one entry per nozzle in ``stats["nozzles"]``."""
+        With no GPA target, it retains the selector's original ranking: for every nozzle and
+        segment, choose the lowest-drift pressure meeting the coverage constraint, or the
+        highest-coverage pressure if none does. With a GPA target, first restrict pressure and
+        rate to their configured bounds, then choose for coverage and drift. Nozzles are ranked
+        by target-and-coverage success, then by drift and rate error. Only pressure is varied;
+        speed and boom-height options do not enter this field-level choice. Uses one
+        ``predict_batch`` call and returns ((family, size), stats) with one entry per nozzle."""
         xs, cands = list(conditions), self.candidates
         n_s, n_c = len(xs), len(cands)
         if n_s == 0 or n_c == 0:
@@ -193,6 +296,12 @@ class ConstrainedSelector:
         drift = np.array([p.drift_frac for p in preds], float).reshape(n_s, n_c)
         corrected = cov + bias
         feasible = corrected - self.margin(cov, lo) >= c_req
+        rate = None
+        if self.target_gpa_gal_acre is not None:
+            rate = np.asarray([
+                [self._derive_fn(x, u).app_rate_gpa for u in cands]
+                for x in xs
+            ], dtype=float)
         groups: dict[tuple[str, str], list[int]] = {}
         for j, u in enumerate(cands):
             groups.setdefault((u.family, u.size), []).append(j)
@@ -201,22 +310,65 @@ class ConstrainedSelector:
         for key, cols in groups.items():
             cols_a = np.array(cols)
             f, d, c = feasible[:, cols_a], drift[:, cols_a], corrected[:, cols_a]
-            ok = f.any(axis=1)
-            pick = np.where(ok, np.where(f, d, np.inf).argmin(axis=1), c.argmax(axis=1))
+            if rate is None:
+                ok = f.any(axis=1)
+                pick = np.where(ok, np.where(f, d, np.inf).argmin(axis=1), c.argmax(axis=1))
+            else:
+                group_rate = rate[:, cols_a]
+                pressure_tol = self.pressure_band_frac if self.pressure_control else 0.0
+                p_mask = np.ones(len(cols_a), dtype=bool)
+                if self.pressure_target_psi is not None:
+                    pressure_values = np.asarray([cands[j].pressure_psi for j in cols_a])
+                    p_error = np.abs(pressure_values - self.pressure_target_psi)
+                    p_mask = p_error <= abs(self.pressure_target_psi) * pressure_tol + 1e-9
+                    if not p_mask.any():
+                        p_mask = p_error <= p_error.min() + 1e-9
+                pick = np.empty(n_s, dtype=int)
+                ok = np.zeros(n_s, dtype=bool)
+                for i in seg:
+                    pressure_idx = np.flatnonzero(p_mask)
+                    pressure_rates = group_rate[i, pressure_idx]
+                    rate_mask = np.abs(pressure_rates - self.target_gpa_gal_acre) <= (
+                        self.target_gpa_gal_acre * self.gpa_tolerance_frac + 1e-9
+                    )
+                    rate_met = bool(rate_mask.any())
+                    if not rate_met:
+                        rate_error = np.abs(pressure_rates - self.target_gpa_gal_acre)
+                        rate_mask = rate_error <= rate_error.min() + 1e-9
+                    eligible = pressure_idx[rate_mask]
+                    good = eligible[f[i, eligible]]
+                    if good.size:
+                        local = np.lexsort((np.abs(group_rate[i, good] - self.target_gpa_gal_acre),
+                                            d[i, good]))
+                        pick[i] = int(good[local[0]])
+                        ok[i] = rate_met
+                    else:
+                        local = np.lexsort((d[i, eligible],
+                                            np.abs(group_rate[i, eligible] - self.target_gpa_gal_acre),
+                                            -c[i, eligible]))
+                        pick[i] = int(eligible[local[0]])
             chosen = cols_a[pick]
             gpa = np.mean([self._derive_fn(xs[i], cands[chosen[i]]).app_rate_gpa for i in seg])
             rows.append({"family": key[0], "size": key[1], "success": float(ok.mean()),
-                         "mean_drift": float(d[seg, pick].mean()), "mean_gpa": float(gpa)})
+                         "mean_drift": float(d[seg, pick].mean()), "mean_gpa": float(gpa),
+                         "mean_gpa_error": (None if self.target_gpa_gal_acre is None else
+                                            float(abs(gpa - self.target_gpa_gal_acre)))})
         # Same trade-off as select(): among the nozzles with the best success rate, the lowest
         # lam * drift + (1 - lam) * volume, both min-max normalized over that group.
         success = np.array([r["success"] for r in rows])
-        md, mv = (np.array([r[k] for r in rows]) for k in ("mean_drift", "mean_gpa"))
+        md = np.array([r["mean_drift"] for r in rows])
+        mv = np.array([r["mean_gpa"] for r in rows])
         top = np.flatnonzero(success >= success.max() - 1e-12)
         score = np.full(len(rows), np.inf)
-        score[top] = self.lam * _minmax(md[top]) + (1 - self.lam) * _minmax(mv[top])
+        if self.target_gpa_gal_acre is None:
+            score[top] = self.lam * _minmax(md[top]) + (1 - self.lam) * _minmax(mv[top])
+        else:
+            rate_error = np.abs(mv - self.target_gpa_gal_acre)
+            score[top] = self.lam * _minmax(md[top]) + (1 - self.lam) * _minmax(rate_error[top])
         for r, s_ in zip(rows, score):
             r["score"] = None if np.isinf(s_) else float(s_)
-        order = np.lexsort((mv, md, score, -success))
+        order = (np.lexsort((mv, md, score, -success)) if self.target_gpa_gal_acre is None
+                 else np.lexsort((rate_error, md, score, -success)))
         best = rows[int(order[0])]
         return (best["family"], best["size"]), {"nozzles": [rows[int(i)] for i in order],
                                                  "c_req": c_req, "n_segments": n_s}

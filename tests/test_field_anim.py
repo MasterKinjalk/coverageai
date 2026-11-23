@@ -56,9 +56,11 @@ def _app():
     sys.path.insert(0, str(Path.cwd() / "app"))
     from coverageai import app_logic as al
     from field_run_view import render_field_animation
+    from smooth_field_view import render_smooth_field
     r = al.run_pass_wrapper(al.build_modules_adapter("oracle_nominal", "perfect"),
                             al.make_conditions("gusty_afternoon", 1, n_segments=8),
                             "fast", 1, "med", 30.0, 0.6)
+    render_smooth_field(r, 30.0)
     render_field_animation(r, 30.0)
 
 
@@ -73,6 +75,48 @@ def test_scientific_fields(res):
     p = field_animation_payload(res, 30.0)
     assert 0 < p["bands"]["border_min"] < p["bands"]["good_min"]
     for s in p["sections"]:
-        for key in ("vmd_um", "crosswind_ms", "feedback_pp", "error_pp", "wind_speed_ms", "drift_pct"):
+        for key in ("vmd_um", "crosswind_ms", "feedback_pp", "error_pp", "wind_speed_ms",
+                    "drift_pct", "predicted_drift_pct", "pressure_psi", "speed_mph", "boom_height_in"):
             assert math.isfinite(s[key])
         assert s["error_pp"] == pytest.approx(s["actual"] - s["after_feedback"], abs=0.2)
+
+
+def test_smooth_field_payload_is_lightweight_and_tracks_lap_geometry(res):
+    p = field_animation_payload(res, 30.0, cards=False, advice=False)
+    assert p["n"] == res.n
+    assert p["rows"] == max(s["row"] for s in p["sections"]) + 1
+    assert p["cols"] == max(s["col"] for s in p["sections"]) + 1
+    assert all(not s["img"] and not s["overlay"] and not s["advice"] for s in p["sections"])
+    assert all(0 <= s["actual"] <= 100 for s in p["sections"])
+
+
+def test_smooth_field_starts_at_one_x_and_shows_live_feedback_adjustments():
+    from smooth_field_view import _HTML
+
+    assert 'data-speed="1" class="on">1×' in _HTML
+    assert "t=0,speed=1,playing=true" in _HTML
+    assert "const s=S[Math.min(Math.floor(t),N-1)]" in _HTML
+    assert "grid-template-columns:repeat(5,minmax(0,1fr))" in _HTML
+    assert "LIVE FEEDBACK ADJUSTMENTS" in _HTML
+    assert "put('reading-section','Section '+s.number+' / '+N)" in _HTML
+    assert "el.classList.add('changed')" in _HTML
+    for element, source in (
+        ("rpressure", "s.pressure_psi"),
+        ("rspeed", "s.speed_mph"),
+        ("rgpa", "s.rate_gpa"),
+        ("rboom", "s.boom_height_in"),
+        ("rcoverage", "s.card"),
+    ):
+        assert f"putLive('{element}'" in _HTML
+        assert source in _HTML
+    for element, source, target in (
+        ("apressure", "s.pressure_psi", "D.setup.pressure"),
+        ("aspeed", "s.speed_mph", "D.setup.speed"),
+        ("agpa", "s.rate_gpa", "D.setup.gpa"),
+        ("aboom", "s.boom_height_in", "D.setup.boom"),
+    ):
+        assert f"putLive('{element}',adjustment({source},Number({target})" in _HTML
+    assert "putLive('acoverage',adjustment(s.card,D.target,'pp',1))" in _HTML
+    assert '<span class="label">Coverage</span>' in _HTML
+    assert "Live coverage reading" in _HTML
+    assert "Coverage vs goal" in _HTML

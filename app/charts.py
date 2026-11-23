@@ -63,6 +63,29 @@ def coverage_timeseries(df: pd.DataFrame, c_req: float, marginal_min: float, n_t
     return _style(layers.resolve_scale(color="independent"), height)
 
 
+def drift_timeseries(df: pd.DataFrame, n_total: int, height: int = 280, mark: int | None = None):
+    """Predicted drift and simulated drift loss by field section."""
+    long = df.melt(id_vars="k", value_vars=["predicted", "simulated"],
+                   var_name="series", value_name="drift_pct")
+    names = {"predicted": "Model prediction", "simulated": "Simulated outcome"}
+    long["series"] = long["series"].map(names)
+    order = list(names.values())
+    x = alt.X("k:Q", title="Field section", scale=alt.Scale(domain=[1, max(n_total, 2)]))
+    y = alt.Y("drift_pct:Q", title="Drift loss (% of sprayed volume)", scale=alt.Scale(zero=True))
+    lines = alt.Chart(long).mark_line(point=alt.OverlayMarkDef(size=28), strokeWidth=2).encode(
+        x=x, y=y,
+        color=alt.Color("series:N", scale=alt.Scale(domain=order, range=["#ffb84d", C_TRUE]),
+                        title=None, legend=alt.Legend(orient="top")),
+        strokeDash=alt.StrokeDash("series:N", title=None,
+                                  scale=alt.Scale(domain=order, range=[[5, 3], [1, 0]])),
+        tooltip=[alt.Tooltip("k:Q", title="Field section"),
+                 alt.Tooltip("series:N", title="Series"),
+                 alt.Tooltip("drift_pct:Q", title="Drift loss (%)", format=".2f")])
+    if mark is not None:
+        lines = lines + _mark(mark)
+    return _style(lines, height)
+
+
 def bias_chart(df: pd.DataFrame, n_total: int, height: int = 280, mark: int | None = None):
     """The numbers of replay panel D: applied feedback correction (line) and the prediction
     error left after it, actual minus prediction after feedback (bars), in pp."""

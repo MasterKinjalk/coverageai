@@ -23,7 +23,7 @@ from coverageai import spray_lab as sl
 from coverageai.app_logic import nozzle_pressure_bounds
 from coverageai.config import spec
 from coverageai.contracts import Setting
-from coverageai.units import gpa_to_lha
+from coverageai.units import gpa_to_lha, kmh_to_mph, mph_to_kmh
 
 _HTML_PATH = Path(__file__).resolve().parent / "static_spray_lab.html"
 _BADGE = {"acceptable": "#3ddc97", "marginal": "#f5b942", "critical": "#ef5b5b"}
@@ -93,8 +93,8 @@ def _controls():
                        step=1.0, key="lab_rh", help="Dry, hot air makes small droplets evaporate faster.")
     with c3:
         st.markdown("**Sprayer and goal**")
-        speed = st.slider("Travel speed (km/h)", float(r["travel_speed_kmh"][0]),
-                          float(r["travel_speed_kmh"][1]), 12.0, step=0.5, key="lab_speed",
+        speed_mph = st.slider("Travel speed (mph)", 5.0, 18.5, 7.5, step=0.5,
+                              key="lab_speed_mph",
                           help="Driving faster spreads the same flow over more ground (lower rate per acre).")
         height = st.slider("Boom height above the target (m)", float(r["boom_height_m"][0]),
                            float(r["boom_height_m"][1]), 0.50, step=0.01, key="lab_height",
@@ -103,7 +103,7 @@ def _controls():
                            key="lab_target",
                            help="Share of the water-sensitive paper card that should turn blue.")
     u = Setting(fam, size, float(pressure))
-    x = sl.make_conditions(wind, sl.WIND_DIRECTIONS[wdir], temp, rh, speed, height)
+    x = sl.make_conditions(wind, sl.WIND_DIRECTIONS[wdir], temp, rh, mph_to_kmh(speed_mph), height)
     return u, x, float(target)
 
 
@@ -478,7 +478,7 @@ def render_spray_lab() -> None:
     st.markdown(
         f"Showing **{sl.family_label(s.family)}**, size {s.size} at {s.pressure_psi:g} psi · wind "
         f"{c.wind_speed_ms:.1f} m/s · {c.temp_c:g} °C, {c.rh_pct:.0f}% humidity · boom "
-        f"{c.boom_height_m:.2f} m · {c.travel_speed_kmh:g} km/h")
+        f"{c.boom_height_m:.2f} m · {kmh_to_mph(c.travel_speed_kmh):g} mph")
     _animation(res)
     st.caption(
         "Simulated droplets seen from behind the sprayer, on true axes in metres (the height axis is "

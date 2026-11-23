@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from coverageai import catalog, units
+
 POLICY = {
     "open": "Model only (no feedback)",
     "fast": "Model + card feedback",
@@ -59,17 +61,13 @@ def size(s): return f"Size {s}"
 
 
 def nozzle_choice(k) -> str:
-    """Sidebar "Nozzle on the boom" options: auto, free, or 'FAMILY-SIZE'."""
-    if k == "auto":
-        return "One nozzle for the whole field (model picks it)"
-    if k == "free":
-        return "Any nozzle, may change every section (experimental)"
+    """Display an internal 'FAMILY-SIZE' catalog key as its nozzle code."""
     fam, _, sz = str(k).partition("-")
-    return f"{fam} {sz} for the whole field"
+    return catalog.nozzle_code(fam, sz)
 
 
 def setting(fam: str, sz: str, psi: float) -> str:
-    return f"{fam} {sz} at {psi:g} psi"
+    return f"{catalog.nozzle_code(fam, sz)} at {psi:g} psi"
 
 
 def setting_of(u) -> str:
@@ -77,7 +75,7 @@ def setting_of(u) -> str:
     when the opt-in speed or boom-height control picked them."""
     t = setting(u.family, u.size, u.pressure_psi)
     if getattr(u, "travel_speed_kmh", None) is not None:
-        t += f", {u.travel_speed_kmh:g} km/h"
+        t += f", {units.kmh_to_mph(u.travel_speed_kmh):g} mph"
     if getattr(u, "boom_height_m", None) is not None:
         t += f", boom {u.boom_height_m:.2f} m"
     return t
@@ -93,8 +91,11 @@ def forecast(k): return _get(FORECAST, k)
 
 
 def parse_setting_text(txt: str) -> str:
-    """'XR-04 @ 40 psi' -> 'XR 04 at 40 psi'."""
-    return re.sub(r"^(\w+)-(\w+) @ ", r"\1 \2 at ", str(txt))
+    """Convert a legacy 'FAMILY-SIZE @ pressure' setting to product-code wording."""
+    match = re.match(r"^(\w+)-(\w+) @ (.+)$", str(txt))
+    if not match:
+        return str(txt)
+    return f"{catalog.nozzle_code(match.group(1), match.group(2))} at {match.group(3)}"
 
 
 def explain(line: str) -> str:
@@ -154,7 +155,7 @@ CMP_COLS = {"policy": "Control strategy", "requirement met (%)": "Sections meeti
 
 # "What the model decided" tables (app_logic.decision_frame) and their number formats
 DECISION_COLS = {"section": "Section", "nozzle": "Nozzle", "pressure_psi": "Pressure (psi)",
-                 "speed_kmh": "Travel speed (km/h)", "boom_height_m": "Boom height (m)",
+                 "speed_mph": "Travel speed (mph)", "boom_height_m": "Boom height (m)",
                  "volume_gpa": "Spray volume (gal/acre)", "droplet_class": "Droplet size",
                  "wind_ms": "Wind (m/s)", "predicted_cov": "Model prediction (%)",
                  "predicted_lo": "Prediction low (%)", "predicted_hi": "Prediction high (%)",
@@ -163,7 +164,7 @@ DECISION_COLS = {"section": "Section", "nozzle": "Nozzle", "pressure_psi": "Pres
                  "actual_cov": "Actual coverage (%)", "error_pp": "Prediction error (pp)",
                  "predicted_drift_pct": "Predicted drift (%)", "actual_drift_pct": "Actual drift (%)",
                  "changed": "Changed since the previous section"}
-DECISION_FMT = {"pressure_psi": "{:g}", "speed_kmh": "{:.1f}", "boom_height_m": "{:.2f}",
+DECISION_FMT = {"pressure_psi": "{:g}", "speed_mph": "{:.1f}", "boom_height_m": "{:.2f}",
                 "volume_gpa": "{:.1f}", "wind_ms": "{:.1f}", "predicted_cov": "{:.1f}",
                 "predicted_lo": "{:.1f}", "predicted_hi": "{:.1f}", "feedback_pp": "{:+.2f}",
                 "after_feedback_cov": "{:.1f}", "card_cov": "{:.1f}", "actual_cov": "{:.1f}",

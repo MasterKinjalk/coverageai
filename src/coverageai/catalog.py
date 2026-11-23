@@ -67,6 +67,22 @@ def sizes(family: str) -> list[str]:
     return sorted(s, key=_size_key)
 
 
+def nozzle_code(family: str, size: str) -> str:
+    """Manufacturer-style display code for a catalog family and size."""
+    prefixes = {
+        "TP65": "TP65",
+        "ULD": "ULDQ20",
+        "3D": "PS3DQ00",
+        "XR": "XR110",
+        "DGX40": "DGX40",
+    }
+    try:
+        prefix = prefixes[family]
+    except KeyError:
+        raise ValueError(f"unknown nozzle family {family!r}") from None
+    return f"{prefix}{size}"
+
+
 def pressure_range(family: str, size: str) -> tuple[float, float]:
     p, _, _ = _rows(family, size)
     return float(p[0]), float(p[-1])
