@@ -5,13 +5,15 @@ Closed-loop simulated pass: scenario -> selector -> simulator (hidden mismatch) 
 is simulation-based evidence, not field validation.
 
 Page structure (Field run tab): one run (``app_logic.PassResult`` in ``st.session_state``)
-feeds the animated replay, the "What the model decided" tables (operator recommendations,
-changes along the field, changes since the previous run, export) and the section inspector.
-The replay plays in the browser; the inspector below it is a separate, static look at one
-section chosen with the "Section to inspect" slider.
+feeds a mockup-inspired dashboard above a separate simulated field replay. The dashboard
+uses one browser timeline for its smooth field animation, setup values, correction panel and
+machine readouts. The original tiled replay stays below as a separate view with its own
+timeline. Run summary and coverage, drift and feedback graphs follow the tiled replay.
+Detailed model outputs and card inspection remain below them.
 """
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -25,8 +27,9 @@ import charts
 import labels as L
 from field_run_view import render_field_animation
 from spray_lab_view import render_spray_lab
+from smooth_field_view import render_smooth_field
 from coverageai import app_logic as al
-from coverageai import catalog, scenarios
+from coverageai import catalog, scenarios, units
 from coverageai.config import spec
 from coverageai.field_anim import nozzle_note
 from coverageai.contracts import (Conditions, Setting, coverage_class, effective_boom_height_m,
@@ -212,11 +215,53 @@ SS.setdefault("want_run", False)
 with st.sidebar:
     st.markdown("### CoverageVision AI")
     st.caption("Closed-loop spray coverage control: simulation demo")
+    st.markdown("#### Weather Conditions")
     preset = st.selectbox("Weather scenario", scenarios.list_presets(), format_func=L.preset,
                           index=_qp_index("preset", scenarios.list_presets(), "gusty_afternoon"),
                           help="A ready-made set of wind, temperature and humidity conditions for a "
                                "simulated pass across the field.")
-    st.caption(scenarios.get(preset).description)
+    scenario = scenarios.get(preset)
+    st.caption(scenario.description)
+
+    st.markdown("#### Machine setup")
+    nozzle_keys = [f"{f}-{z}" for f in catalog.families() for z in catalog.sizes(f)]
+    nozzle_codes = {L.nozzle_choice(key): key for key in nozzle_keys}
+    nozzle_opts = list(nozzle_codes)
+    if not nozzle_opts:
+        st.error("No nozzles are available in the catalog.")
+        st.stop()
+    default_nozzle = "TP6501" if "TP6501" in nozzle_codes else nozzle_opts[0]
+    legacy_nozzle_codes = {key: code for code, key in nozzle_codes.items()}
+    requested_nozzle = str(st.query_params.get("nozzle", default_nozzle))
+    requested_nozzle = legacy_nozzle_codes.get(requested_nozzle, requested_nozzle)
+    if requested_nozzle not in nozzle_codes:
+        requested_nozzle = default_nozzle
+    nozzle_code = st.selectbox("Nozzle", nozzle_opts,
+                               index=next((i for i, code in enumerate(nozzle_opts)
+                                           if code == requested_nozzle), 0),
+                               help="Choose the nozzle fitted to the whole boom. This nozzle stays "
+                                    "the same throughout the field.")
+    nozzle_choice = nozzle_codes[nozzle_code]
+    target_gpa = st.slider("Target spray rate (gal/acre)", 1.0, 80.0, 20.0, 0.5,
+                           help="The selector tries to stay within the chosen tolerance. It expands "
+                                "pressure and speed ranges as needed, and warns if the closest "
+                                "available rate is still outside the tolerance.")
+    target_speed_mph = st.slider("Target travel speed (mph)", 5.0, 18.5,
+                                 round(units.kmh_to_mph(scenario.speed_kmh) * 2.0) / 2.0, 0.5,
+                             help="Starting speed for the field. The controller tries the 25% band "
+                                  "first, then can use the full supported speed range if needed to "
+                                  "meet the GPA target.")
+    target_speed_kmh = units.mph_to_kmh(target_speed_mph)
+    pressure_target = st.slider("Target pressure (psi)", 10.0, 115.0, 40.0, 5.0,
+                                help="Starting pressure. The controller can vary pressure within "
+                                     "25% of this value first, then across the selected nozzle's chart "
+                                     "if needed to meet the GPA target.")
+    target_boom = st.slider("Starting boom height (m)", 0.30, 0.75,
+                            float(round(scenario.boom_height_m / 0.05) * 0.05), 0.05,
+                            help="Starting height above the target. Automatic adjustment respects the "
+                                 "supported range and the nozzle fan-overlap limit.")
+
+    st.markdown("#### Model selection")
     seed = st.number_input("Random seed", min_value=0, max_value=10_000, step=1,
                            value=int(st.query_params.get("seed", 1)),
                            help="Same number = same simulated field and weather, so runs can be repeated "
@@ -243,6 +288,10 @@ with st.sidebar:
                     float(spec()["selector"]["lambda"]), 0.05,
                     help="0 = mostly save water (use less spray volume). 1 = mostly reduce drift "
                          "(keep spray from blowing off target). Values between balance the two.")
+    gpa_tolerance = st.slider("GPA target tolerance (%)", 0.0, 20.0, 5.0, 1.0,
+                              help="The selector tries to keep every section within this range. "
+                                   "If no setting can, the pass runs at the closest available rates "
+                                   "and the app warns.")
     model_name = st.selectbox("Coverage predictor", al.MODEL_CHOICES, format_func=L.model,
                               index=_qp_index("model", al.MODEL_CHOICES, "spray"),
                               help="The model that predicts how much of the card a nozzle setting will cover.")
@@ -254,45 +303,30 @@ with st.sidebar:
                                       "plus simulated sensor error. Classic image analysis and the "
                                       "neural network look at a picture of the card, like a real camera "
                                       "would (slower).")
-    nozzle_opts = ["auto", "free"] + [f"{f}-{z}" for f in catalog.families() for z in catalog.sizes(f)]
-    nozzle_choice = st.selectbox("Nozzle on the boom", nozzle_opts, format_func=L.nozzle_choice,
-                                 index=_qp_index("nozzle", nozzle_opts, "auto"),
-                                 help="A sprayer carries one nozzle for a whole field, so by default "
-                                      "the model picks the single best nozzle for this field and then "
-                                      "only adjusts pressure (and speed or boom height if allowed "
-                                      "below). You can also name the nozzle that is fitted, or let "
-                                      "the nozzle change at every section (not possible on a real "
-                                      "boom; kept for experiments).")
+    machine_control_supported = model_name != "mock" and policy != "best_fixed"
+    auto_adjust = machine_control_supported
+    st.checkbox("Automatically adjust pressure, speed, and boom height",
+                value=auto_adjust, disabled=True,
+                help="A target GPA requires automatic machine adjustment. The selector considers "
+                     "pressure and speed changes to meet the rate, and boom height to help coverage "
+                     "and drift. If the nozzle cannot reach the target, the pass uses the closest "
+                     "available rate and warns.")
+    if model_name == "mock":
+        st.info("The simple test model cannot enforce target GPA. A pass will not run with this model.")
+    elif policy == "best_fixed":
+        st.info("The single best nozzle strategy chooses its own nozzle, ignores the selected nozzle, "
+                "and cannot enforce target GPA. A pass will not run with this strategy.")
     show_cards = st.checkbox("Show the paper cards in the replay",
                              value=st.query_params.get("cards", "1") != "0",
                              help="Shows each section's water-sensitive paper card as the replay "
                                   "reaches it. With a reader that does not look at pictures (perfect "
                                   "or noisy reading) the cards are drawn after the run, which takes a "
                                   "few seconds.")
-
-    def keep_advanced_open() -> None:
-        SS["adv_open"] = True        # an expander otherwise folds back up on the rerun a click causes
-
-    with st.expander("Advanced controller options",
-                     expanded=bool(SS.get("adv_open")) or any(
-                         st.query_params.get(q) == "1" for q in ("speed", "boom"))
-                     or st.query_params.get("forecast", "off") != "off"):
-        speed_ctl = st.checkbox("Let the controller change travel speed",
-                                value=st.query_params.get("speed", "0") == "1",
-                                on_change=keep_advanced_open,
-                                help="Off: speed is whatever the field conditions say. On: besides the nozzle "
-                                     "setting, the controller may drive up to 25% slower or faster (within "
-                                     "limits) to trade spray volume against coverage and drift.")
-        boom_ctl = st.checkbox("Let the controller change boom height",
-                               value=st.query_params.get("boom", "0") == "1",
-                               on_change=keep_advanced_open,
-                               help="Off: boom height is whatever the field conditions say. On: the controller "
-                                    "may also raise or lower the boom (within 25% and the legal range, never "
-                                    "so low that the spray fans stop overlapping). Lower booms drift less.")
+    with st.expander("Wind forecast (optional)",
+                     expanded=st.query_params.get("forecast", "off") != "off"):
         fc_opts = list(al.FORECAST_CHOICES)
         forecast_name = st.selectbox("Wind forecast", fc_opts, format_func=L.forecast,
                                      index=_qp_index("forecast", fc_opts, "off"),
-                                     on_change=keep_advanced_open,
                                      help="Off: the controller plans with the wind read at the start of each "
                                           "section. Otherwise it predicts the wind the spray will meet from the "
                                           "gusts it measured in the sections already sprayed. Used by the "
@@ -306,19 +340,27 @@ with st.sidebar:
         model_name, verifier_name = "oracle_nominal", "perfect"
     st.divider()
     lockable = modules is not None and hasattr(modules.selector, "best_nozzle")
-    if not lockable:
-        nozzle_choice = "free"       # the simple test model has its own toy nozzle list
     cfg = (preset, int(seed), mismatch, policy, float(c_req), float(lam), model_name, verifier_name,
-           bool(speed_ctl), bool(boom_ctl), forecast_name, nozzle_choice, bool(show_cards))
-    ctl_opts = dict(speed_control=bool(speed_ctl), boom_control=bool(boom_ctl), forecaster=forecast_name,
-                    fixed_nozzle=nozzle_choice)
+           float(target_gpa), float(gpa_tolerance), float(target_speed_kmh), float(pressure_target),
+           float(target_boom), bool(auto_adjust), forecast_name, nozzle_choice, bool(show_cards))
+    ctl_opts = dict(speed_control=bool(auto_adjust), boom_control=bool(auto_adjust),
+                    pressure_control=bool(auto_adjust),
+                    pressure_target_psi=(float(pressure_target) if machine_control_supported else None),
+                    target_gpa_gal_acre=(float(target_gpa) if machine_control_supported else None),
+                    gpa_tolerance_frac=float(gpa_tolerance) / 100.0,
+                    forecaster=forecast_name,
+                    fixed_nozzle=(nozzle_choice if lockable else None))
     inputs = {"Weather scenario": L.preset(preset), "Random seed": str(int(seed)),
               "Real-world surprises": L.mismatch(mismatch), "Control strategy": L.policy(policy),
               "Target coverage (%)": f"{c_req:g}", "Priority (0 water, 1 drift)": f"{lam:g}",
               "Coverage predictor": L.model(model_name), "Card reader": L.verifier(verifier_name),
-              "Nozzle on the boom": L.nozzle_choice(nozzle_choice),
-              "Controller changes travel speed": "Yes" if speed_ctl else "No",
-              "Controller changes boom height": "Yes" if boom_ctl else "No",
+              "Nozzle": nozzle_code,
+              "Target spray rate (gal/acre)": f"{target_gpa:g}",
+              "GPA target tolerance (%)": f"{gpa_tolerance:g}",
+              "Target travel speed (mph)": f"{target_speed_mph:g}",
+              "Target pressure (psi)": f"{pressure_target:g}",
+              "Starting boom height (m)": f"{target_boom:g}",
+              "Automatic machine adjustment": "On" if auto_adjust else "Off",
               "Wind forecast": L.forecast(forecast_name)}
 
     def run_pass_cb() -> None:
@@ -334,20 +376,30 @@ with st.sidebar:
 
 if SS["result"] is None or SS["want_run"]:
     SS["want_run"] = False
-    conds0 = cached_conditions(preset, int(seed))
-    with st.spinner("Running pass (selector, simulator, card, feedback) ..."):
-        new = al.run_pass_wrapper(modules, conds0, policy, int(seed), mismatch, float(c_req), float(lam),
-                                  capture_cards=bool(show_cards), **ctl_opts)
-    if show_cards and new.cards is None:
-        with st.spinner("Drawing the paper cards ..."):
-            al.ensure_cards(new)
-    new.meta["cfg"] = cfg
-    new.meta["inputs"] = inputs
-    old = SS["result"]
-    if old is not None:
-        old.cards = None             # only the newest run keeps its card pictures
-    SS.update(result=new, previous=old, run_id=SS["run_id"] + 1, card_cache={})
-    st.rerun()
+    if not machine_control_supported:
+        reason = "the simple test model" if model_name == "mock" else "the single best nozzle strategy"
+        st.error(f"No pass was run because {reason} cannot enforce the requested GPA target.")
+        if SS["result"] is None:
+            st.stop()
+    else:
+        conds0 = [dataclasses.replace(x, travel_speed_kmh=float(target_speed_kmh),
+                                      boom_height_m=float(target_boom))
+                  for x in cached_conditions(preset, int(seed))]
+        with st.spinner("Checking target GPA and running the simulated pass ..."):
+            new = al.run_pass_wrapper(
+                modules, conds0, policy, int(seed), mismatch, float(c_req), float(lam),
+                capture_cards=bool(show_cards), **ctl_opts,
+            )
+        if show_cards and new.cards is None:
+            with st.spinner("Drawing the paper cards ..."):
+                al.ensure_cards(new)
+        new.meta["cfg"] = cfg
+        new.meta["inputs"] = inputs
+        old = SS["result"]
+        if old is not None:
+            old.cards = None             # only the newest run keeps its card pictures
+        SS.update(result=new, previous=old, run_id=SS["run_id"] + 1, card_cache={})
+        st.rerun()
 res: al.PassResult = SS["result"]
 stale = res.meta.get("cfg") != cfg
 cursor = int(np.clip(SS["section"], 1, res.n)) - 1
@@ -358,6 +410,7 @@ def render_decisions(res: al.PassResult, prev: al.PassResult | None) -> None:
     st.subheader("What the model decided")
     recs = al.recommendation_frame(res)
     dec = al.decision_frame(res)
+    dec["speed_mph"] = dec.pop("speed_kmh").map(units.kmh_to_mph)
     n_chg = int((dec["changed"] != "").sum())
     t_rec, t_chg, t_prev, t_all = st.tabs([
         f"Operator recommendations ({len(recs)})", f"Changes along the field ({n_chg})",
@@ -376,11 +429,11 @@ def render_decisions(res: al.PassResult, prev: al.PassResult | None) -> None:
                    "before it. Nozzle: " + nozzle_note(res) + ".")
         chg = dec[dec["changed"] != ""]
         if len(chg):
-            st.dataframe(chg[["section", "changed", "nozzle", "pressure_psi", "speed_kmh", "boom_height_m",
+            st.dataframe(chg[["section", "changed", "nozzle", "pressure_psi", "speed_mph", "boom_height_m",
                               "wind_ms", "predicted_cov", "after_feedback_cov", "card_cov"]]
                          .rename(columns=L.DECISION_COLS)
                          .style.format({L.DECISION_COLS[c]: f for c, f in L.DECISION_FMT.items()
-                                        if c in ("pressure_psi", "speed_kmh", "boom_height_m", "wind_ms",
+                                        if c in ("pressure_psi", "speed_mph", "boom_height_m", "wind_ms",
                                                  "predicted_cov", "after_feedback_cov", "card_cov")}),
                          hide_index=True, width="stretch")
         else:
@@ -447,36 +500,94 @@ with tab_lab:
 with tab_live:
     if stale:
         st.info("Sidebar settings changed since this run was computed. Press **Run pass** to refresh.")
-    st.markdown(loop_overview_html(), unsafe_allow_html=True)
-    st.subheader("Replay of the run")
-    st.caption("Each field section goes once around the loop above. Press Play to watch the run "
-               "section by section: the map, the paper card, the coverage and the feedback all move "
-               "together. Hover or click a section for its values; the 4x speed plays the whole field "
-               "in about ten seconds.")
-    render_field_animation(res, res.c_req, cards=bool(show_cards))
     rc = res.c_req
     cc = spec()["coverage_classes"]
     kp = al.compute_kpis(res.logs, rc)
     n_adv = len(al.recommendation_frame(res))
+    run_inputs = res.meta.get("inputs", {})
+    run_gpa_target = float(run_inputs.get("Target spray rate (gal/acre)", target_gpa))
+    run_gpa_tolerance = float(run_inputs.get("GPA target tolerance (%)", gpa_tolerance)) / 100.0
+
+    st.subheader("Field run dashboard")
+    st.caption("Set parameters in the sidebar. Play the dashboard to see the sprayer move and the "
+               "environmental readings, correction panel, and machine readouts update together.")
+    render_smooth_field(res, res.c_req, height=560)
+    st.slider("Section to inspect (details below)", 1, res.n, key="section",
+              help="Choose which section to show in the static detail view below. The dashboard and tiled "
+                   "replay each have their own live playback timeline.")
+    k = cursor
+
+    st.divider()
+    st.subheader("Field coverage replay")
+    st.caption("Watch the section-by-section coverage map, paper cards, and in-replay coverage, weather, "
+               "drift and feedback charts. This replay has its own controls; the smooth field view above "
+               "has a separate timeline.")
+    render_field_animation(res, res.c_req, height=900, cards=bool(show_cards))
+
+    st.subheader("Run summary")
     cols = st.columns(6)
     kpi(cols[0], "Sections meeting target", f"{kp['n_met']} / {kp['n']}",
         f"{100 * kp['frac_met']:.0f}% (actual coverage)")
     kpi(cols[1], "Average coverage", f"{kp['mean_cov']:.1f}%", f"card reading {kp['mean_meas']:.1f}%")
-    kpi(cols[2], "Average spray volume", f"{kp['mean_gpa']:.1f} gal/acre", f"{kp['mean_gpa'] * 9.354:.0f} L/ha")
+    kpi(cols[2], "Average spray volume", f"{kp['mean_gpa']:.1f} gal/acre",
+        f"target {run_gpa_target:.1f} ± {run_gpa_tolerance:.0%}")
     kpi(cols[3], "Average drift", f"{100 * kp['mean_drift']:.1f}%", "of sprayed volume")
     kpi(cols[4], "Needs re-spraying", f"{kp['n_retreat']}", "sections with a poor card")
     kpi(cols[5], "Recommendations", f"{n_adv}", "sections with a card below target")
+    gpa_misses = sum(
+        abs(lg.derived.app_rate_gpa - run_gpa_target)
+        > run_gpa_target * run_gpa_tolerance + 1e-9
+        for lg in res.logs
+    )
+    gpa_unreachable = res.meta.get("gpa_unreachable_sections", [])
+    if gpa_unreachable:
+        details = "; ".join(
+            f"section {item['section']} (closest {item['closest_gpa']:.1f} GPA)"
+            if item["closest_gpa"] is not None else f"section {item['section']} (no setting)"
+            for item in gpa_unreachable[:5]
+        )
+        if len(gpa_unreachable) > 5:
+            details += f"; {len(gpa_unreachable) - 5} more"
+        st.warning(
+            f"Automatic pressure, speed, and boom adjustments could not reach the target "
+            f"rate ({run_gpa_target:.1f} gal/acre within {run_gpa_tolerance:.0%}) in "
+            f"{len(gpa_unreachable)} section(s). The pass ran at the closest available rates: "
+            f"{details}. Actual mean rate: {kp['mean_gpa']:.1f} gal/acre."
+        )
+    elif gpa_misses:
+        st.warning(f"The target rate ({run_gpa_target:.1f} gal/acre) was outside the "
+                   f"{run_gpa_tolerance:.0%} tolerance in {gpa_misses} of {res.n} sections. "
+                   f"Actual mean rate: {kp['mean_gpa']:.1f} gal/acre.")
     st.caption(f"Whole run: {L.policy(res.policy)}; surprises: {L.mismatch(res.mismatch).lower()}; "
                f"nozzle: {nozzle_note(res)}. Computed in {res.elapsed_s:.1f} s.")
-    render_decisions(res, SS["previous"])
-    if res.policy == "fast_slow" and res.meta.get("passes"):
-        render_learning_table(res.meta["passes"])
-    st.divider()
+
+    st.subheader("Feedback loop over the run")
+    ts = al.timeseries_frame(res.logs)
+    drift = pd.DataFrame({
+        "k": [lg.k + 1 for lg in res.logs],
+        "predicted": [100.0 * lg.pred.drift_frac for lg in res.logs],
+        "simulated": [100.0 * lg.outcome.drift_frac for lg in res.logs],
+    })
+    g1, g2, g3 = st.columns(3, gap="medium")
+    with g1:
+        st.altair_chart(charts.coverage_timeseries(ts, rc, cc["marginal_min"], res.n, mark=k + 1),
+                        width="stretch")
+        st.caption("Model prediction, prediction after feedback, card reading, and simulated coverage. "
+                   "Dashed line: target.")
+    with g2:
+        st.altair_chart(charts.drift_timeseries(drift, res.n, mark=k + 1), width="stretch")
+        st.caption("Predicted drift and simulated drift loss as a share of sprayed volume.")
+    with g3:
+        st.altair_chart(charts.bias_chart(ts, res.n, mark=k + 1), width="stretch")
+        st.caption("Feedback correction and remaining prediction error, in percentage points.")
+
+    with st.expander("Model decisions and run analysis"):
+        render_decisions(res, SS["previous"])
+        if res.policy == "fast_slow" and res.meta.get("passes"):
+            render_learning_table(res.meta["passes"])
+
     st.subheader("Section inspector")
-    st.slider("Section to inspect", 1, res.n, key="section",
-              help="A closer, static look at one section of the run above: the loop step by step, the "
-                   "full-size card and the settings that were considered.")
-    k = cursor
+    st.caption(f"Detailed view of section {k + 1}.")
     lg = res.logs[k]
     x, d = lg.x, lg.derived
     st.markdown(loop_steps_html(res, k), unsafe_allow_html=True)
@@ -496,8 +607,9 @@ with tab_live:
             f'<tr><td>Driving direction</td><td>{x.heading_deg:.0f}°</td></tr>'
             f'<tr><td>Crosswind / headwind</td><td>{d.u_cross_ms:+.1f} / {d.u_along_ms:+.1f} m/s</td></tr>'
             f'<tr><td>Temperature / humidity</td><td>{x.temp_c:.1f} °C / {x.rh_pct:.0f} %</td></tr>'
-            f'<tr><td>Travel speed</td><td>{effective_speed_kmh(x, lg.u):.1f} km/h'
-            + (f' (field {x.travel_speed_kmh:.1f}, set by controller)' if lg.u.travel_speed_kmh is not None else '')
+            f'<tr><td>Travel speed</td><td>{units.kmh_to_mph(effective_speed_kmh(x, lg.u)):.1f} mph'
+            + (f' (field {units.kmh_to_mph(x.travel_speed_kmh):.1f}, set by controller)'
+               if lg.u.travel_speed_kmh is not None else '')
             + '</td></tr>'
             f'<tr><td>Boom height</td><td>{effective_boom_height_m(x, lg.u):.2f} m'
             + (f' (field {x.boom_height_m:.2f}, set by controller)' if lg.u.boom_height_m is not None else '')
@@ -589,21 +701,9 @@ with tab_live:
                        "sensor error and no picture is read during the run. The card and outline shown "
                        "here are for illustration only (read afterwards with classic image analysis).")
 
-    # ---- 4. the feedback loop over the whole run (the numbers of panels B and D above)
-    st.subheader("Feedback loop over the run")
-    ts = al.timeseries_frame(res.logs)
-    t1, t2 = st.columns([3, 2], gap="medium")
-    with t1:
-        st.altair_chart(charts.coverage_timeseries(ts, rc, cc["marginal_min"], res.n, mark=k + 1),
-                        width="stretch")
-        st.caption("Coverage in every section (panel B of the replay). Dashed green line: target "
-                   "coverage. Shaded bands: Poor / Borderline / Good. Prediction after feedback = model "
-                   "prediction + feedback correction. Vertical line: the inspected section.")
-    with t2:
-        st.altair_chart(charts.bias_chart(ts, res.n, mark=k + 1), width="stretch")
-        st.caption("The same numbers as panel D of the replay: the feedback correction applied to each "
-                   "section's prediction (line) and the prediction error left after it, actual minus "
-                   "prediction after feedback (bars), in percentage points.")
+    with st.expander("How the simulation loop works"):
+        st.markdown(loop_overview_html(), unsafe_allow_html=True)
+
     with st.expander("Feedback-loop numbers for every section"):
         st.dataframe(ts[list(L.LOOP_COLS)].rename(columns=L.LOOP_COLS).style.format(
             {c: "{:+.2f}" if "(pp)" in c else "{:.1f}" for c in L.LOOP_COLS.values() if c != "Section"}),
@@ -682,7 +782,8 @@ with tab_noz:
                               "90 = pure crosswind blowing from the sprayer's left to its right.")
         tmp = st.slider("Temperature (°C)", *map(float, r["temp_c"]), 25.0, 0.5, key="nz_t")
         rh = st.slider("Relative humidity (%)", *map(float, r["rh_pct"]), 55.0, 1.0, key="nz_rh")
-        spd = st.slider("Travel speed (km/h)", *map(float, r["travel_speed_kmh"]), 16.0, 0.5, key="nz_v")
+        spd_mph = st.slider("Travel speed (mph)", 5.0, 18.5, 10.0, 0.5, key="nz_v_mph")
+        spd = units.mph_to_kmh(spd_mph)
         hgt = st.slider("Boom height (m)", *map(float, r["boom_height_m"]), 0.5, 0.01, key="nz_h")
     xn = Conditions(ws, float(rel_ % 360), 0.0, tmp, rh, spd, hgt)
     un = Setting(fam, size, float(pres))

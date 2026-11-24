@@ -57,6 +57,39 @@ def test_info_fields_and_wind_gate():
     assert info["wind_limit_exceeded"] is True
 
 
+def test_target_gpa_filters_candidates_and_reports_unreachable_target():
+    cands = [Setting("XR", "04", float(p)) for p in (20, 25, 30, 35)]
+
+    def derive(x, u):
+        from dataclasses import replace
+        return replace(mock_derive(x, u), app_rate_gpa=u.pressure_psi)
+
+    sel = ConstrainedSelector(candidates_fn=lambda: cands, derive_fn=derive,
+                              target_gpa_gal_acre=30.0, gpa_tolerance_frac=0.05)
+    assert sel.candidates_for(X) == [cands[2]]
+    chosen, info = sel.select(X, MockModel(), 0.0, 0.0)
+    assert chosen == cands[2] and info["gpa_target_met"] is True
+
+    sel.target_gpa_gal_acre = 32.5
+    sel.gpa_tolerance_frac = 0.01
+    assert sel.candidates_for(X) == [cands[2], cands[3]]
+    assert sel.gpa_target_status(X) == (False, 30.0)
+    chosen, info = sel.select(X, MockModel(), 0.0, 0.0)
+    assert chosen in (cands[2], cands[3]) and info["gpa_target_met"] is False
+
+
+def test_pressure_setpoint_limits_or_locks_pressure_candidates():
+    cands = [Setting("XR", "04", float(p)) for p in (20, 25, 30, 35, 40)]
+    sel = ConstrainedSelector(candidates_fn=lambda: cands, derive_fn=mock_derive,
+                              pressure_target_psi=30.0, pressure_control=True,
+                              pressure_band_frac=0.25)
+    assert sel.candidates_for(X) == cands[1:4]
+
+    sel.pressure_target_psi = 32.0
+    sel.pressure_control = False
+    assert sel.candidates_for(X) == [cands[2]]
+
+
 def test_raising_creq_never_lowers_chosen_coverage():
     sel, model = make(), MockModel()
     prev = -1.0

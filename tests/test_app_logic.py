@@ -1,11 +1,12 @@
 """Unit tests for the non-UI helpers behind the Streamlit demo (coverageai.app_logic)."""
 from __future__ import annotations
 
+import dataclasses
 import numpy as np
 import pytest
 
 from coverageai import app_logic as al
-from coverageai import scenarios
+from coverageai import catalog, scenarios
 from coverageai.config import spec
 from coverageai.contracts import Conditions, Setting
 
@@ -253,6 +254,96 @@ def test_speed_and_boom_control_run_and_restore_selector(modules):
     assert len({lg.u for lg in bf.logs}) == 1
 
 
+def test_target_gpa_and_pressure_controls_are_applied_and_restored(modules):
+    conds = [dataclasses.replace(x, travel_speed_kmh=16.0, boom_height_m=0.5)
+             for x in al.make_conditions("calm_morning", 4, n_segments=6)]
+    target_gpa = catalog.derive(conds[0], Setting("XR", "04", 40.0)).app_rate_gpa
+    r = al.run_pass_wrapper(
+        modules, conds, "fast", 4, "none", 0.0, speed_control=True, boom_control=True,
+        fixed_nozzle="XR-04", target_gpa_gal_acre=target_gpa, gpa_tolerance_frac=0.05,
+        pressure_control=True, pressure_target_psi=40.0,
+    )
+    assert all(abs(lg.derived.app_rate_gpa - target_gpa) <= target_gpa * 0.05 + 1e-9
+               for lg in r.logs)
+    assert modules.selector.target_gpa_gal_acre is None
+    assert modules.selector.gpa_tolerance_frac == 0.05
+    assert modules.selector.pressure_target_psi is None
+    assert modules.selector.pressure_control is False
+    assert modules.selector.pressure_band_frac == 0.25
+
+
+@pytest.mark.parametrize("target_gpa", [25.0, 44.5])
+def test_target_gpa_expands_setpoint_bands_within_tip_guide_limits(modules, target_gpa, monkeypatch):
+    from coverageai import units
+
+    scenario = scenarios.get("gusty_afternoon")
+    target_speed_mph = round(units.kmh_to_mph(scenario.speed_kmh) * 2.0) / 2.0
+    target_speed_kmh = units.mph_to_kmh(target_speed_mph)
+    target_boom = float(round(scenario.boom_height_m / 0.05) * 0.05)
+    conds = [dataclasses.replace(x, travel_speed_kmh=target_speed_kmh,
+                                 boom_height_m=target_boom)
+             for x in al.make_conditions("gusty_afternoon", 1)]
+    original_select = modules.selector.select
+    active_controls = []
+
+    def observe_controls(x, model, bias, c_req):
+        active_controls.append((
+            list(modules.selector.speed_options_kmh),
+            list(modules.selector.boom_height_options_m),
+            modules.selector.pressure_control,
+        ))
+        return original_select(x, model, bias, c_req)
+
+    monkeypatch.setattr(modules.selector, "select", observe_controls)
+    result = al.run_pass_wrapper(
+        modules, conds, "fast", 1, "med", 30.0,
+        speed_control=False, boom_control=False, fixed_nozzle="TP65-05",
+        target_gpa_gal_acre=target_gpa, gpa_tolerance_frac=0.05,
+        pressure_control=False, pressure_target_psi=40.0,
+    )
+    assert active_controls
+    assert active_controls[0] == (
+        list(al.SPEED_OPTIONS_KMH), list(al.BOOM_HEIGHT_OPTIONS_M), True,
+    )
+    rates = [lg.derived.app_rate_gpa for lg in result.logs]
+    assert all(target_gpa * 0.95 - 1e-9 <= rate <= target_gpa * 1.05 + 1e-9
+               for rate in rates)
+    assert any(lg.u.travel_speed_kmh is not None
+               and lg.u.travel_speed_kmh < target_speed_kmh * 0.75
+               for lg in result.logs)
+    if target_gpa == 44.5:
+        assert any(lg.u.pressure_psi > 50.0 for lg in result.logs)
+
+
+def test_unreachable_target_gpa_runs_closest_rate_and_restores_selector(modules):
+    conds = al.make_conditions("calm_morning", 4, n_segments=6)
+    result = al.run_pass_wrapper(
+        modules, conds, "fast", 4, "none", 0.0, fixed_nozzle="XR-04",
+        target_gpa_gal_acre=0.1, gpa_tolerance_frac=0.0,
+        pressure_control=False, pressure_target_psi=40.0,
+    )
+    unreachable = result.meta["gpa_unreachable_sections"]
+    assert len(unreachable) == len(conds)
+    assert all(item["closest_gpa"] is not None and item["closest_gpa"] > 0.1
+               for item in unreachable)
+    assert all(lg.derived.app_rate_gpa > 0.1 for lg in result.logs)
+    assert any(lg.u.travel_speed_kmh is not None for lg in result.logs)
+    assert modules.selector.target_gpa_gal_acre is None
+    assert modules.selector.pressure_target_psi is None
+    assert modules.selector.nozzle_lock is None
+    assert modules.selector.speed_options_kmh == []
+    assert modules.selector.boom_height_options_m == []
+    assert modules.selector.pressure_control is False
+
+
+def test_best_fixed_cannot_bypass_target_gpa(modules):
+    with pytest.raises(ValueError, match="cannot enforce a target GPA"):
+        al.run_pass_wrapper(
+            modules, al.make_conditions("calm_morning", 4, n_segments=3),
+            "best_fixed", 4, "none", 0.0, target_gpa_gal_acre=20.0,
+        )
+
+
 def test_forecaster_option_runs_for_supported_policies_only(modules):
     conds = al.make_conditions("gusty_afternoon", 4, n_segments=10)
     on = al.run_pass_wrapper(modules, conds, "fast", 4, "high", 30.0, 0.6, forecaster="ar1")
@@ -272,7 +363,7 @@ def test_top_candidates_label_includes_controlled_speed_and_height(modules):
     r = al.run_pass_wrapper(modules, conds, "open", 1, "none", 30.0, speed_control=True,
                             boom_control=True)
     txt = " ".join(al.top_candidates_frame(r.info_for(0))["Setting"])
-    assert "km/h" in txt and "boom" in txt
+    assert "mph" in txt and "boom" in txt
 
 
 # ---------------------------- review fixes: failed calls leave the cached selector untouched

@@ -11,6 +11,7 @@ from coverageai.config import spec
 from coverageai.contracts import effective_boom_height_m, effective_speed_kmh
 from coverageai.recommend import (KNOBS, current_value, knob_values, recommend, recommend_for_logs,
                                   with_value)
+from coverageai.units import kmh_to_mph
 
 
 @pytest.fixture(scope="module")
@@ -90,6 +91,7 @@ def test_speed_option_slows_down_and_adds_volume(mods, case):
     sp = [a for a in r.options if a.knob == "speed"]
     assert sp, "speed should help coverage in the physics model"
     assert sp[0].delta < 0 and sp[0].volume_change_gpa > 0       # GPA ~ 1/speed
+    assert "mph" in sp[0].describe()
     assert sp[0].describe().startswith("Slow down")
 
 
@@ -100,7 +102,9 @@ def test_describe_and_headline_contain_numbers(mods, case):
     a = r.best
     nd = {"pressure": 0, "speed": 1, "boom_height": 2}[a.knob]
     d = a.describe()
-    assert f"{a.proposed:.{nd}f}" in d and f"{a.current:.{nd}f}" in d
+    current = kmh_to_mph(a.current) if a.knob == "speed" else a.current
+    proposed = kmh_to_mph(a.proposed) if a.knob == "speed" else a.proposed
+    assert f"{proposed:.{nd}f}" in d and f"{current:.{nd}f}" in d
     assert f"{a.expected_cov:.0f}%" in d and f"{a.gain_pp:+.1f} pp" in d
     assert r.headline() == d and r.lines()[0] == d
 

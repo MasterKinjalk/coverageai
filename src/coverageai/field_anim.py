@@ -13,8 +13,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from coverageai import app_logic as al
+from coverageai import app_logic as al, catalog, units
 from coverageai.config import spec
+from coverageai.contracts import effective_boom_height_m, effective_speed_kmh
 
 STRATEGY_NAMES = {
     "open": "Model only (no feedback)",
@@ -49,10 +50,14 @@ def nozzle_note(res) -> str:
     nz = res.meta.get("nozzle", {})
     mode = nz.get("mode", "free")
     if mode == "best_fixed":
+        if res.logs:
+            u = res.logs[0].u
+            return f"{catalog.nozzle_code(u.family, u.size)} for the whole field (chosen by strategy)"
         return "one fixed setting"
     if mode == "free":
         return "may change every section"
-    name = f"{nz.get('family', '?')} {nz.get('size', '?')}"
+    family, size = nz.get("family"), nz.get("size")
+    name = catalog.nozzle_code(family, size) if family and size else "the selected nozzle"
     return f"{name} for the whole field" + (" (picked by the model)" if mode == "auto" else "")
 
 
@@ -81,6 +86,9 @@ def field_animation_payload(res, c_req: float, cards: bool = True, advice: bool 
             "wind_screen_deg": _f(rel + (180.0 if direction < 0 else 0.0), 1),
             "temp_c": _f(x.temp_c, 1), "rh_pct": _f(x.rh_pct, 0),
             "nozzle": al.setting_text(u),
+            "pressure_psi": _f(u.pressure_psi, 1),
+            "speed_mph": _f(units.kmh_to_mph(effective_speed_kmh(x, u)), 1),
+            "boom_height_in": _f(effective_boom_height_m(x, u) / 0.0254, 1),
             "droplet": DROPLET_NAMES.get(d.droplet_class, str(d.droplet_class)),
             "rate_gpa": _f(d.app_rate_gpa),
             "vmd_um": _f(d.vmd_um, 0), "crosswind_ms": _f(abs(d.u_cross_ms)),
@@ -89,6 +97,7 @@ def field_animation_payload(res, c_req: float, cards: bool = True, advice: bool 
             "after_feedback": _f(n["after_feedback"], 1),
             "card": _f(n["card"], 1),
             "actual": _f(n["actual"], 1),
+            "predicted_drift_pct": _f(lg.pred.drift_frac * 100.0, 2),
             "label": class_label(cls),
             "color": al.CLASS_COLORS.get(cls, al.CLASS_COLORS["critical"]),
             "drift_pct": _f(lg.outcome.drift_frac * 100.0, 2),

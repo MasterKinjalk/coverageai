@@ -30,6 +30,34 @@ pending inputs left. The only open criterion is the real-card one, blocked by da
 * Reader timing re-measured with the same protocol on the desktop CPU (`results/b1_idle_retime.json`): B1 p95 0.52 s, B0 p95 0.15 s. The <= 2 s laptop criterion is met by the earlier busy-laptop measurement (B1 p95 1.09 s, an upper bound for that laptop); the desktop number is not a laptop number.
 * Final report filled with both inputs (`APP_CHECK`, `B1_IDLE_RETIME` in `reports/final/build.py`); no PENDING boxes remain.
 
+## Changes since 2026-11-10
+
+* The Field run sidebar groups Weather Conditions, Machine setup, and Model selection. Random
+  seed and real-world surprises are under Model selection. The Nozzle selector lists physical
+  catalog nozzles by product code and defaults to TP6501; a GPA target always enables automatic
+  pressure/speed/boom adjustment. GPA tolerance remains a per-section goal: if no setting is within
+  tolerance, the pass runs at the closest available rates and warns (D31 supersedes D29-D30's
+  infeasible-pass block). XR is labeled
+  XR110 and retains its current simulation data. These app changes have not been evaluated across
+  seeds.
+* The Field run tab now shows a mockup-inspired dashboard above a separate simulated replay:
+  setup summaries at left, a smooth field animation in the center, correction at right, and four
+  round readouts. One browser timeline drives the moving sprayer and updates the dashboard values;
+  the original tiled replay remains below on its own timeline (D26-D27). Parameter controls remain
+  in the sidebar. This presentation change has not been tested for operator usability or
+  small-screen layouts.
+* The smooth dashboard starts at 1×. Four circular readouts show the selected pressure, speed,
+  application rate and boom height for the current section, with the difference from each sidebar
+  target. Coverage and its comparison to the goal remain in the correction panel (D32).
+* GPA selection preflights every section. It first searches the 25% pressure/speed bands, then
+  expands to the selected nozzle guide's full pressure range and legal speed range. If no setting
+  meets the tolerance, the pass runs at the closest available rates and warns; pressure, speed and
+  boom-height controls are enabled whenever a target is set. Unsupported mock and best-fixed modes
+  remain blocked because they cannot enforce GPA (D31).
+* The 2026-11-18 rebuild refreshed `reports/final/final_report.html` and
+  `results/scorecard.md` with the prior machine setup/dashboard description. The PDF was not
+  regenerated because Edge is unavailable in this environment.
+
 ## Still open
 
 1. **Real annotated cards (blocked).** Zenodo record 14010262 (2 annotated real cards, 2,754 droplets, plus pre-annotated real squares) is restricted. Someone on the team must request access through the Zenodo page and/or send `reports/email_draft_simoes.md`. When the files arrive, put them under `data/external/simoes2025/real/image/*.png` and `real/label/*.txt` and run `uv run --no-sync python experiments/eval_verifiers.py --merge`; then rebuild the report. Until then the "<= 5 pp on real cards" criterion is blocked.
@@ -47,7 +75,6 @@ pending inputs left. The only open criterion is the real-card one, blocked by da
    * `experiments/demo_screenshots.py` live mode still clicks controls that no longer exist (the Step button and old tab names); the report uses the `--static` path.
 
 7. **New app features are not evaluated across seeds (D19, D20).** The one-nozzle-per-field default and the operator recommendations were checked on single app runs only. Two paired 20-seed runs would settle them: closed loop with `nozzle_lock` from `best_nozzle` against free nozzle choice (share of sections meeting C_req, volume, drift), and a re-spray experiment that applies each recommendation and measures whether the section then meets the target. Until then, describe both as app behaviour, not as results.
-8. **The final report predates the 2026-11-10 app.** `reports/final/` was not rebuilt. Its app paragraph (`APP_CHECK` in `reports/final/build.py`) describes the earlier layout (sidebar step controls, free nozzle choice). Update that text before the next rebuild. The report's numbers are unaffected: no experiment was rerun.
 9. **The section inspector does not follow the replay.** The replay runs in an embedded page that cannot report its position to Streamlit. A two-way component (`st.components.v1.declare_component`) would let a click in the replay drive the inspector.
 
 ## Rebuilding the final report

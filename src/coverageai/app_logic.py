@@ -31,7 +31,7 @@ from typing import Any, Callable, Sequence
 import numpy as np
 import pandas as pd
 
-from coverageai import scenarios
+from coverageai import catalog, scenarios, units
 from coverageai.config import px_per_mm, spec
 from coverageai.contracts import (Conditions, Outcome, Prediction, Setting,
                                   coverage_class)
@@ -43,12 +43,13 @@ APP_POLICIES = ("open", "fast", "fast_slow", "oracle", "oracle_card", "best_fixe
 N_LEARN_PASSES = 3          # earlier "learning" passes before the displayed fast_slow pass
 MODEL_CHOICES = ("oracle_nominal", "spray", "mock")
 VERIFIER_CHOICES = ("perfect", "noisy", "b0", "b1")
-# Opt-in controller options (all off by default; see config/spec.yaml selector.*_options and
-# coverageai.forecast). The grids are the ones the evaluation scripts use
+# Controller options remain off by default in the library. The app can opt in by default
+# (decision D23). The grids are the ones the evaluation scripts use
 # (experiments/eval_speed_control.py, experiments/eval_boom_control.py); the selector further
 # restricts them to +-band around the field conditions and to the legal ranges.
 SPEED_OPTIONS_KMH = tuple(float(v) for v in range(8, 31, 2))
 BOOM_HEIGHT_OPTIONS_M = (0.30, 0.40, 0.50, 0.60, 0.75)
+PRESSURE_BAND_FRAC = 0.25
 FORECAST_CHOICES = ("off", "last", "ewma", "ar1", "ar1+gust")
 CLASS_COLORS = {"acceptable": "#3ddc97", "marginal": "#f5b942", "critical": "#ef5b5b",
                 "pending": "#2b3340"}
@@ -245,7 +246,11 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
                      speed_control: bool = False, boom_control: bool = False,
                      forecaster: str | None = None,
                      fixed_nozzle: str | tuple[str, str] | None = None,
-                     capture_cards: bool = False) -> PassResult:
+                     capture_cards: bool = False,
+                     target_gpa_gal_acre: float | None = None,
+                     gpa_tolerance_frac: float = 0.05,
+                     pressure_control: bool = False,
+                     pressure_target_psi: float | None = None) -> PassResult:
     """Run one pass and keep what the UI needs (selector records, timing, card thumbnails).
 
     ``fast_slow``: runs ``n_learn`` earlier passes (seeds ``seed + 1009 i``, no card
@@ -273,12 +278,22 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     duration of the call; fast_slow learning passes use the same nozzle; best_fixed ignores it.
     The choice is reported in ``meta["nozzle"]``.
 
+    When ``target_gpa_gal_acre`` is set, pressure, speed and boom-height controls are enabled
+    regardless of the optional-control flags. The selector first prefers settings within 25% of
+    the pressure and speed setpoints, then expands pressure to the selected nozzle's chart and
+    speed to the legal spec range. It keeps settings within the GPA tolerance when possible;
+    otherwise it runs with the closest available rate and records the affected sections in
+    ``meta["gpa_unreachable_sections"]``. The app warns when the target cannot be met. The shared
+    selector is restored after the pass.
+
     ``capture_cards`` keeps a thumbnail of every card the loop renders and reads
     (``PassResult.cards``; None if the loop read no images, see ``ensure_cards``). It wraps the
     renderer and verifier in recording proxies for this call only and does not change any number.
     """
     if policy not in POLICIES:
         raise ValueError(f"unknown policy {policy!r}")
+    if target_gpa_gal_acre is not None and policy == "best_fixed":
+        raise ValueError("the best-fixed strategy cannot enforce a target GPA")
     sel = modules.selector
     rec = sel if isinstance(sel, RecordingSelector) else RecordingSelector(sel)
     mods = dataclasses.replace(modules, selector=rec)
@@ -301,13 +316,36 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
     fc = _make_forecaster(forecaster) if policy in FORECAST_POLICIES else None
     old_lam = getattr(sel, "lam", None)
     inner = sel.inner if isinstance(sel, RecordingSelector) else sel
+    gpa_control = target_gpa_gal_acre is not None
     opt_grids: list[tuple[str, Any]] = []
-    for on, attr, grid, what in ((speed_control, "speed_options_kmh", SPEED_OPTIONS_KMH, "travel-speed"),
-                                 (boom_control, "boom_height_options_m", BOOM_HEIGHT_OPTIONS_M, "boom-height")):
+    for on, attr, grid, what in (
+            (speed_control or gpa_control, "speed_options_kmh", SPEED_OPTIONS_KMH, "travel-speed"),
+            (boom_control or gpa_control, "boom_height_options_m", BOOM_HEIGHT_OPTIONS_M, "boom-height")):
         if on:
             if not hasattr(inner, attr):
                 raise ValueError(f"this selector does not support {what} control")
             opt_grids.append((attr, grid))
+    temporary_opts: list[tuple[str, Any]] = []
+    if target_gpa_gal_acre is not None:
+        if not np.isfinite(target_gpa_gal_acre) or target_gpa_gal_acre <= 0:
+            raise ValueError("target GPA must be a positive finite number")
+        if not 0 <= gpa_tolerance_frac <= 1:
+            raise ValueError("GPA tolerance must be between 0 and 1")
+        temporary_opts.extend([
+            ("target_gpa_gal_acre", float(target_gpa_gal_acre)),
+            ("gpa_tolerance_frac", float(gpa_tolerance_frac)),
+        ])
+    if pressure_target_psi is not None:
+        if not np.isfinite(pressure_target_psi) or pressure_target_psi <= 0:
+            raise ValueError("target pressure must be a positive finite number")
+        temporary_opts.extend([
+            ("pressure_target_psi", float(pressure_target_psi)),
+            ("pressure_control", bool(pressure_control or gpa_control)),
+            ("pressure_band_frac", PRESSURE_BAND_FRAC),
+        ])
+    for attr, _ in temporary_opts:
+        if not hasattr(inner, attr):
+            raise ValueError(f"this selector does not support {attr.replace('_', ' ')}")
     lock = _parse_nozzle(fixed_nozzle) if policy != "best_fixed" else None
     if lock is not None:
         if not hasattr(inner, "best_nozzle"):
@@ -326,6 +364,9 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
         for attr, grid in opt_grids:
             saved_opts[attr] = getattr(inner, attr)
             setattr(inner, attr, list(grid))
+        for attr, value in temporary_opts:
+            saved_opts[attr] = getattr(inner, attr)
+            setattr(inner, attr, value)
         if lock is not None:
             meta["nozzle"] = {"mode": "auto" if lock == "auto" else "fixed"}
             if lock == "auto":      # after lam is set: the choice uses this pass's trade-off
@@ -334,6 +375,21 @@ def run_pass_wrapper(modules: Modules, conds: Sequence[Conditions], policy: str,
             meta["nozzle"].update(family=lock[0], size=lock[1])
             saved_opts["nozzle_lock"] = inner.nozzle_lock
             inner.nozzle_lock = lock
+        if target_gpa_gal_acre is not None:
+            status = getattr(inner, "gpa_target_status", None)
+            if not callable(status):
+                raise ValueError("this selector cannot verify target GPA feasibility")
+            unreachable = [
+                (k + 1, closest)
+                for k, x in enumerate(conds)
+                for reachable, closest in [status(x)]
+                if not reachable
+            ]
+            if unreachable:
+                meta["gpa_unreachable_sections"] = [
+                    {"section": section, "closest_gpa": closest}
+                    for section, closest in unreachable
+                ]
         if policy == "fast_slow":
             run_seed, passes = _learn_between_passes(mods, conds, int(seed), mismatch,
                                                      float(c_req), int(n_learn), forecaster=fc)
@@ -556,14 +612,16 @@ def setting_changes(prev, cur) -> list[str]:
     a, b = prev.u, cur.u
     out = []
     if (a.family, a.size) != (b.family, b.size):
-        out.append(f"nozzle {a.family} {a.size} to {b.family} {b.size}")
+        out.append(f"nozzle {catalog.nozzle_code(a.family, a.size)} to "
+                   f"{catalog.nozzle_code(b.family, b.size)}")
     if abs(a.pressure_psi - b.pressure_psi) > 1e-9:
         out.append(f"pressure {a.pressure_psi:g} to {b.pressure_psi:g} psi "
                    f"({b.pressure_psi - a.pressure_psi:+g})")
     if a.travel_speed_kmh is not None or b.travel_speed_kmh is not None:
-        va, vb = effective_speed_kmh(prev.x, a), effective_speed_kmh(cur.x, b)
+        va, vb = (units.kmh_to_mph(effective_speed_kmh(prev.x, a)),
+                  units.kmh_to_mph(effective_speed_kmh(cur.x, b)))
         if abs(va - vb) > 1e-9:
-            out.append(f"speed {_fmt(va, 1)} to {_fmt(vb, 1)} km/h ({vb - va:+.1f})")
+            out.append(f"speed {_fmt(va, 1)} to {_fmt(vb, 1)} mph ({vb - va:+.1f})")
     if a.boom_height_m is not None or b.boom_height_m is not None:
         ha, hb = effective_boom_height_m(prev.x, a), effective_boom_height_m(cur.x, b)
         if abs(ha - hb) > 1e-9:
@@ -581,7 +639,7 @@ def decision_frame(res: "PassResult") -> pd.DataFrame:
     for k, lg in enumerate(res.logs):
         n = loop_numbers(lg)
         rows.append({
-            "section": k + 1, "nozzle": f"{lg.u.family} {lg.u.size}",
+            "section": k + 1, "nozzle": catalog.nozzle_code(lg.u.family, lg.u.size),
             "pressure_psi": lg.u.pressure_psi,
             "speed_kmh": effective_speed_kmh(lg.x, lg.u),
             "boom_height_m": effective_boom_height_m(lg.x, lg.u),
@@ -599,8 +657,14 @@ def decision_frame(res: "PassResult") -> pd.DataFrame:
 
 
 def logs_frame(res: "PassResult") -> pd.DataFrame:
-    """The complete flat run log (``loop.logs_to_frame``): every logged field of every section."""
-    return logs_to_frame(res.logs)
+    """The complete flat run log, with displayed travel-speed fields converted to mph."""
+    frame = logs_to_frame(res.logs)
+    for column in ("x_travel_speed_kmh", "u_travel_speed_kmh"):
+        if column in frame:
+            frame[column] = frame[column].map(
+                lambda value: units.kmh_to_mph(value) if pd.notna(value) else value)
+            frame.rename(columns={column: column.replace("_kmh", "_mph")}, inplace=True)
+    return frame
 
 
 def run_summary(res: "PassResult") -> dict[str, float]:
@@ -639,10 +703,10 @@ def run_changes(prev: "PassResult", cur: "PassResult") -> dict:
 
 
 def setting_text(u: Setting) -> str:
-    """'XR 04 at 40 psi', plus the travel speed / boom height when the controller set them."""
-    t = f"{u.family} {u.size} at {u.pressure_psi:g} psi"
+    """A nozzle code and pressure, plus controller-set speed / boom height when present."""
+    t = f"{catalog.nozzle_code(u.family, u.size)} at {u.pressure_psi:g} psi"
     if u.travel_speed_kmh is not None:
-        t += f", {u.travel_speed_kmh:g} km/h"
+        t += f", {units.kmh_to_mph(u.travel_speed_kmh):g} mph"
     if u.boom_height_m is not None:
         t += f", boom {u.boom_height_m:.2f} m"
     return t
@@ -680,9 +744,14 @@ def top_candidates_frame(info: dict | None) -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
     rows = []
     for c in info["top"]:
-        extra = "".join([f", {c['travel_speed_kmh']:g} km/h" if c.get("travel_speed_kmh") is not None else "",
-                         f", boom {c['boom_height_m']:.2f} m" if c.get("boom_height_m") is not None else ""])
-        rows.append({"Setting": f"{c['family']}-{c['size']} @ {c['pressure_psi']:g} psi{extra}",
+        extra = (
+            f", {units.kmh_to_mph(c['travel_speed_kmh']):g} mph"
+            if c.get("travel_speed_kmh") is not None else ""
+        )
+        if c.get("boom_height_m") is not None:
+            extra += f", boom {c['boom_height_m']:.2f} m"
+        rows.append({"Setting": f"{catalog.nozzle_code(c['family'], c['size'])} @ "
+                                 f"{c['pressure_psi']:g} psi{extra}",
                      "Pred %": round(c["pred_cov"], 1),
                      "Corr. %": round(c["corrected_cov"], 1),
                      "Drift": round(c["drift"], 4), "GPA": round(c["gpa"], 2),
